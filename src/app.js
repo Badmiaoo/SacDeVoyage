@@ -40,6 +40,7 @@ import {
   attention,
 } from "./store.js?v=14"
 import { dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
+import { formatDay, formatLine } from "./text.js"
 
 const app = document.querySelector("#app")
 let departureKind = "once"
@@ -173,7 +174,7 @@ function drawBag(id) {
         : `<input class="qty" data-action="bag-qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">`
       return `<div class="line">
         <button class="check ${on}" data-action="check" data-id="${line.itemId}">
-          <span>${esc(itemName(db, line.itemId))}</span>
+          <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
         </button>
         ${qty}
       </div>`
@@ -279,7 +280,7 @@ function drawDepartures() {
   const trips = db.departures
     .map((departure) => {
       const when = departure.kind === "once"
-        ? `Du ${departure.start} au ${departure.end}`
+        ? `Du ${formatDay(departure.start)} au ${formatDay(departure.end)}`
         : `Tous les ${weekdays[departure.weekday].toLowerCase()}s`
       return `<div class="line">
         <a class="row" href="#/departs/${departure.id}"><strong>${esc(departure.name)}</strong><span>${esc(when)}</span></a>
@@ -313,7 +314,7 @@ function drawDepartures() {
       </form>`
     : `<p class="empty">D'abord, crée un modèle de départ dans Modèles.</p>`
   const agenda = agendaEvents(db, todayIso())
-    .map((event) => `<div class="row"><strong>${esc(event.title)}</strong><span>depuis ${esc(event.since)}</span></div>`)
+    .map((event) => `<div class="row"><strong>${esc(event.title)}</strong><span>depuis ${esc(formatDay(event.since))}</span></div>`)
     .join("")
   const linked = sessionUsable(loadSession(localStorage))
   const link = linked
@@ -361,12 +362,12 @@ function drawDeparture(id) {
   if (!departure) return layout("Départ", `<p class="empty">Ce départ n'existe pas.</p>`)
   const model = db.departureModels.find((entry) => entry.id === departure.modelId)
   const today = todayIso()
-  const when = departure.kind === "once" ? `${departure.start} → ${departure.end}` : `Chaque ${weekdays[departure.weekday]}`
+  const when = departure.kind === "once" ? `${formatDay(departure.start)} → ${formatDay(departure.end)}` : `Chaque ${weekdays[departure.weekday]}`
   const actions = (model?.actions || [])
     .map((action) => {
       const on = actionChecked(departure, action) ? "on" : ""
       return `<button class="check ${on}" data-action="trip-check" data-id="${action.id}">
-        <span>${esc(action.label)}</span><span>${esc(daysBefore(action.offsetDays))} · ${esc(actionDate(departure, action, today))}</span>
+        <span>${esc(action.label)}</span><span>${esc(daysBefore(action.offsetDays))} · ${esc(formatDay(actionDate(departure, action, today)))}</span>
       </button>`
     })
     .join("")
@@ -374,7 +375,7 @@ function drawDeparture(id) {
     .map((bagId) => {
       const bag = db.bags.find((entry) => entry.id === bagId)
       if (!bag) return ""
-      const stuff = resolveLines(db, bag).map((line) => esc(itemName(db, line.itemId))).join(", ")
+      const stuff = resolveLines(db, bag).map((line) => esc(formatLine(itemName(db, line.itemId), line.qty))).join(", ")
       const state = shownStatus(bag)
       return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${esc(state)}${stuff ? ` · ${stuff}` : ""}</span></a>`
     })
