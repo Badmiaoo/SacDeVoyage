@@ -43,10 +43,10 @@ nav {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   background: #1c1915;
 }
-nav a { color: white; text-align: center; text-decoration: none; padding: 1rem 0.2rem; }
+nav a { color: white; text-align: center; text-decoration: none; padding: 1rem 0.2rem; font-size: 0.95rem; }
 
 input.qty { flex: 0 0 4.5rem; }
 .check { flex: 1; }

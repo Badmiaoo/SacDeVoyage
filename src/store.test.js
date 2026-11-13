@@ -3,14 +3,24 @@ import assert from "node:assert/strict"
 import {
   emptyDb,
   createItem,
-  renameItem,
-  deleteItem,
   createBagModel,
   setModelLine,
+  setAfterUse,
   createBag,
   toggleCheck,
   resolveLines,
   setBagQty,
+  renameItem,
+  deleteItem,
+  addDays,
+  createDepartureModel,
+  toggleDepartureBag,
+  addDepartureAction,
+  createDeparture,
+  actionDate,
+  applyOutings,
+  markEmptied,
+  visibleLines,
 } from "./store.js"
 
 test("refuse un objet du même nom", () => {
@@ -80,4 +90,43 @@ test("le nombre d'un enfant ne change pas le modèle", () => {
   assert.equal(resolveLines(db, db.bags[0])[0].qty, 3)
   db = setModelLine(db, model.model.id, item.item.id, 4).db
   assert.equal(resolveLines(db, db.bags[0])[0].qty, 3)
+})
+
+test("J-30 part du début", () => {
+  let db = emptyDb()
+  const model = createDepartureModel(db, "Avec avion")
+  db = model.db
+  db = addDepartureAction(db, model.model.id, "Papiers", 30).db
+  const departure = createDeparture(db, "CSE juin", model.model.id, "once", "2026-08-12", "2026-08-20", "")
+  db = departure.db
+  assert.equal(actionDate(db.departures[0], db.departureModels[0].actions[0], "2026-06-01"), "2026-07-13")
+  assert.equal(addDays("2026-08-12", -1), "2026-08-11")
+})
+
+test("après la fin, seul le sac concerné passe à vider", () => {
+  let db = emptyDb()
+  const item = createItem(db, "Stab")
+  db = item.db
+  const wet = createBagModel(db, "Plongée")
+  db = wet.db
+  db = setAfterUse(db, wet.model.id, "marked").db
+  db = setModelLine(db, wet.model.id, item.item.id, 1).db
+  const calm = createBagModel(db, "Cabine")
+  db = calm.db
+  const bag = createBag(db, "Plongée du mardi", wet.model.id)
+  db = bag.db
+  const other = createBag(db, "Cabine", calm.model.id)
+  db = other.db
+  const trip = createDepartureModel(db, "Club")
+  db = trip.db
+  db = toggleDepartureBag(db, trip.model.id, bag.bag.id).db
+  db = createDeparture(db, "Sortie", trip.model.id, "once", "2026-11-01", "2026-11-10", "").db
+  db = applyOutings(db, "2026-11-11")
+  assert.equal(db.bags.find((entry) => entry.id === bag.bag.id).status, "emptying")
+  assert.equal(db.bags.find((entry) => entry.id === other.bag.id).status, "ready")
+  const again = applyOutings(db, "2026-11-12")
+  assert.equal(again.bags.find((entry) => entry.id === bag.bag.id).status, "emptying")
+  db = markEmptied(db, bag.bag.id).db
+  assert.equal(db.bags.find((entry) => entry.id === bag.bag.id).status, "filling")
+  assert.equal(visibleLines(db, db.bags.find((entry) => entry.id === bag.bag.id)).length, resolveLines(db, db.bags[0]).length)
 })
