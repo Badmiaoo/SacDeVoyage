@@ -11,6 +11,7 @@ import {
   removeModelLine,
   createBag,
   addBagLine,
+  removeBagLine,
   toggleCheck,
   setBagQty,
   markEmptied,
@@ -42,8 +43,13 @@ import {
   agendaEvents,
   missingChecks,
   attention,
-} from "./store.js?v=16"
-import { dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
+  gapNames,
+  updateDeparture,
+  updateDepartureAction,
+  exportData,
+  importData,
+} from "./store.js?v=18"
+import { clearSession, dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 import { formatDay, formatLine } from "./text.js"
 
 const app = document.querySelector("#app")
@@ -142,10 +148,11 @@ function shownStatus(bag) {
 }
 
 function faultNotice(bag) {
-  const missing = missingChecks(db, bag)
-  if (!missing.length) return ""
-  const names = missing.map((id) => esc(itemName(db, id))).join(", ")
-  return `<p class="alert">En défaut. Pas coché : ${names}</p>`
+  const names = gapNames(db, bag).map((name) => esc(name)).join(", ")
+  if (!names) return ""
+  if (bag.status === "filling") return `<p class="alert">Pas encore remis : ${names}</p>`
+  if (bag.status === "ready") return `<p class="alert">En défaut. Pas coché : ${names}</p>`
+  return ""
 }
 
 function drawBags() {
@@ -153,7 +160,9 @@ function drawBags() {
     .sort((a, b) => attention(db, a) - attention(db, b))
     .map((bag) => {
       const count = visibleLines(db, bag).length
-      return `<a class="row" href="#/sac/${bag.id}"><strong>${esc(bag.name)}</strong><span>${esc(shownStatus(bag))} · ${count}</span></a>`
+      const gaps = gapNames(db, bag)
+      const detail = gaps.length ? `${shownStatus(bag)} · ${gaps.join(", ")}` : `${shownStatus(bag)} · ${count}`
+      return `<a class="row" href="#/sac/${bag.id}"><strong>${esc(bag.name)}</strong><span>${esc(detail)}</span></a>`
     })
     .join("")
   const options = db.bagModels.map((model) => `<option value="${model.id}">${esc(model.name)}</option>`).join("")
@@ -164,7 +173,10 @@ function drawBags() {
         <button>Créer le sac</button>
       </form>`
     : `<p class="empty">Crée d'abord un modèle.</p>`
-  layout("Sacs", `${cards || `<p class="empty">Aucun sac.</p>`}${form}`)
+  const copy = `<h2>Copie</h2>
+    <button type="button" data-action="export">Télécharger une copie</button>
+    <form data-action="import"><input name="file" type="file" accept="application/json"><button>Reprendre une copie</button></form>`
+  layout("Sacs", `${cards || `<p class="empty">Aucun sac.</p>`}${form}${copy}`)
 }
 
 function drawBag(id) {
@@ -176,11 +188,15 @@ function drawBag(id) {
       const qty = bag.status === "emptying"
         ? ""
         : `<input class="qty" data-action="bag-qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">`
+      const own = bag.added.some((entry) => entry.itemId === line.itemId)
+        ? `<button type="button" data-action="remove-bag-line" data-id="${line.itemId}">Retirer</button>`
+        : ""
       return `<div class="line">
         <button class="check ${on}" data-action="check" data-id="${line.itemId}">
           <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
         </button>
         ${qty}
+        ${own}
       </div>`
     })
     .join("")
@@ -241,7 +257,7 @@ function drawModel(id) {
         ? `<button type="button" data-action="mark" data-id="${line.itemId}">${line.removeAfter ? "À sortir" : "Reste"}</button>`
         : ""
       return `<div class="line">
-        <span>${esc(itemName(db, line.itemId))}</span>
+        <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
         <input class="qty" data-action="qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">
         ${mark}
         <button data-action="remove-line" data-id="${line.itemId}">Retirer</button>
@@ -322,7 +338,7 @@ function drawDepartures() {
     .join("")
   const linked = sessionUsable(loadSession(localStorage))
   const link = linked
-    ? `<p class="empty">Agenda Google relié.</p>`
+    ? `<p class="empty">Agenda Google relié.</p><button type="button" class="quiet" data-action="disconnect">Oublier la connexion</button>`
     : `<button data-action="connect-google">Relier l'agenda Google</button>`
   const note = agendaNote ? `<p class="alert">${esc(agendaNote)}</p>` : ""
   layout("Départs", `${trips || `<p class="empty">Aucun départ.</p>`}<h2>Dans l'agenda</h2>${note}${agenda || `<p class="empty">Rien en attente.</p>`}${link}<h2>Nouveau</h2>${create}`)
@@ -338,10 +354,12 @@ function drawDepartureModel(id) {
     })
     .join("")
   const actions = model.actions
-    .map((action) => `<div class="line">
-      <div class="row"><strong>${esc(action.label)}</strong><span>${esc(daysBefore(action.offsetDays))}</span></div>
-      <button class="quiet" data-action="delete-action" data-id="${action.id}">Retirer</button>
-    </div>`)
+    .map((action) => `<form class="line" data-action="edit-action" data-id="${action.id}">
+      <input name="label" value="${esc(action.label)}" required>
+      <input name="days" type="number" min="0" value="${-action.offsetDays}">
+      <button>Modifier</button>
+      <button type="button" class="quiet" data-action="delete-action" data-id="${action.id}">Retirer</button>
+    </form>`)
     .join("")
   layout(
     model.name,
@@ -385,7 +403,19 @@ function drawDeparture(id) {
       return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${esc(state)}${stuff ? ` · ${stuff}` : ""}</span></a>`
     })
     .join("")
-  layout(departure.name, `<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}<form data-action="rename-departure" data-id="${departure.id}"><input name="name" value="${esc(departure.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
+  const edit = departure.kind === "once"
+    ? `<form data-action="edit-departure" data-id="${departure.id}">
+        <input type="hidden" name="kind" value="once">
+        <label>Le jour où tu pars<input name="start" type="date" value="${esc(departure.start || "")}" required></label>
+        <label>Le jour où tu rentres<input name="end" type="date" value="${esc(departure.end || "")}" required></label>
+        <button>Modifier les dates</button>
+      </form>`
+    : `<form data-action="edit-departure" data-id="${departure.id}">
+        <input type="hidden" name="kind" value="recurring">
+        <label>Tous les<select name="weekday">${weekdays.map((label, index) => `<option value="${index}" ${index === departure.weekday ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        <button>Modifier le jour</button>
+      </form>`
+  layout(departure.name, `<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}${edit}<form data-action="rename-departure" data-id="${departure.id}"><input name="name" value="${esc(departure.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
 }
 
 app.addEventListener("submit", (event) => {
@@ -451,6 +481,25 @@ app.addEventListener("submit", (event) => {
     if (result.error) return alert(result.error)
     persist(result.db)
   }
+  if (action === "edit-action") {
+    const result = updateDepartureAction(db, page.id, form.dataset.id, data.get("label"), data.get("days"))
+    if (result.error) return alert(result.error)
+    persist(result.db)
+  }
+  if (action === "edit-departure") {
+    const result = updateDeparture(db, form.dataset.id, data.get("kind"), data.get("start"), data.get("end"), data.get("weekday"))
+    if (result.error) return alert(result.error)
+    persist(result.db)
+  }
+  if (action === "import") {
+    const file = data.get("file")
+    if (!file || typeof file.text !== "function") return
+    file.text().then((raw) => {
+      const result = importData(raw)
+      if (result.error) return alert(result.error)
+      persist(result.db)
+    })
+  }
   if (action === "departure") {
     const result = createDeparture(
       db,
@@ -476,6 +525,11 @@ app.addEventListener("click", (event) => {
   const page = route()
   if (action === "check") persist(toggleCheck(db, page.id, target.dataset.id).db)
   if (action === "remove-line") persist(removeModelLine(db, page.id, target.dataset.id).db)
+  if (action === "remove-bag-line") {
+    const result = removeBagLine(db, page.id, target.dataset.id)
+    if (result.error) return alert(result.error)
+    persist(result.db)
+  }
   if (action === "delete-item") persist(deleteItem(db, target.dataset.id).db)
   if (action === "mark") {
     const model = db.bagModels.find((entry) => entry.id === page.id)
@@ -503,6 +557,19 @@ app.addEventListener("click", (event) => {
     persist(deleteDepartureModel(db, target.dataset.id).db)
   }
   if (action === "delete-action") persist(removeDepartureAction(db, page.id, target.dataset.id).db)
+  if (action === "export") {
+    const url = URL.createObjectURL(new Blob([exportData(db)], { type: "application/json" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "sac-de-voyage.json"
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+  if (action === "disconnect") {
+    clearSession(localStorage)
+    agendaNote = ""
+    draw()
+  }
   if (action === "connect-google") {
     const google = globalThis.google
     if (!google?.accounts?.oauth2) {

@@ -251,6 +251,32 @@ export function addBagLine(db, bagId, itemId, qty) {
   }
 }
 
+export function removeBagLine(db, bagId, itemId) {
+  const bag = db.bags.find((entry) => entry.id === bagId)
+  if (!bag) return { db, error: "Introuvable." }
+  const model = db.bagModels.find((entry) => entry.id === bag.modelId)
+  if (model?.lines.some((line) => line.itemId === itemId)) return { db, error: "Ça vient du modèle." }
+  if (!bag.added.some((line) => line.itemId === itemId)) return { db }
+  return {
+    db: {
+      ...db,
+      bags: db.bags.map((entry) => {
+        if (entry.id !== bagId) return entry
+        const qty = { ...entry.qty }
+        const checks = { ...entry.checks }
+        delete qty[itemId]
+        delete checks[itemId]
+        return {
+          ...entry,
+          added: entry.added.filter((line) => line.itemId !== itemId),
+          qty,
+          checks,
+        }
+      }),
+    },
+  }
+}
+
 export function toggleCheck(db, bagId, itemId) {
   return {
     db: {
@@ -341,6 +367,11 @@ export function visibleLines(db, bag) {
   return lines
 }
 
+export function gapNames(db, bag) {
+  if (bag.status === "emptying") return []
+  return resolveLines(db, bag).filter((line) => !bag.checks[line.itemId]).map((line) => itemName(db, line.itemId))
+}
+
 export function missingChecks(db, bag) {
   if (bag.status !== "ready") return []
   return resolveLines(db, bag).filter((line) => !bag.checks[line.itemId]).map((line) => line.itemId)
@@ -397,6 +428,73 @@ export function addDepartureAction(db, modelId, label, daysBefore) {
       ),
     },
   }
+}
+
+export function updateDepartureAction(db, modelId, actionId, label, daysBefore) {
+  const trimmed = String(label || "").trim()
+  if (!trimmed) return { db, error: "Le nom est vide." }
+  const offsetDays = -Math.max(0, Number(daysBefore) || 0)
+  let found = false
+  const departureModels = db.departureModels.map((model) => {
+    if (model.id !== modelId) return model
+    return {
+      ...model,
+      actions: model.actions.map((action) => {
+        if (action.id !== actionId) return action
+        found = true
+        return { ...action, label: trimmed, offsetDays }
+      }),
+    }
+  })
+  if (!found) return { db, error: "Introuvable." }
+  return { db: { ...db, departureModels } }
+}
+
+export function updateDeparture(db, departureId, kind, start, end, weekday) {
+  if (!db.departures.some((entry) => entry.id === departureId)) return { db, error: "Introuvable." }
+  if (kind !== "once" && kind !== "recurring") return { db, error: "Le type n'existe pas." }
+  if (kind === "once" && (!start || !end || end < start)) return { db, error: "Il faut un début et une fin." }
+  const day = Number(weekday)
+  if (kind === "recurring" && (weekday === "" || !Number.isInteger(day) || day < 0 || day > 6)) {
+    return { db, error: "Il faut un jour." }
+  }
+  return {
+    db: {
+      ...db,
+      departures: db.departures.map((entry) => {
+        if (entry.id !== departureId) return entry
+        const done = kind === "once"
+          ? Object.fromEntries(Object.entries(entry.done).map(([key, value]) => [key, value === entry.start ? start : value]))
+          : entry.done
+        return {
+          ...entry,
+          kind,
+          start: kind === "once" ? start : null,
+          end: kind === "once" ? end : null,
+          weekday: kind === "recurring" ? day : null,
+          done,
+        }
+      }),
+    },
+  }
+}
+
+export function exportData(db) {
+  return JSON.stringify(db)
+}
+
+export function importData(raw) {
+  let data
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    return { error: "Ce fichier n'est pas lisible." }
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) return { error: "Ce fichier n'est pas lisible." }
+  for (const key of ["items", "bagModels", "bags", "departureModels", "departures"]) {
+    if (!Array.isArray(data[key])) return { error: "Ce fichier n'est pas une sauvegarde." }
+  }
+  return { db: { ...emptyDb(), ...data, version: 1 } }
 }
 
 export function createDeparture(db, name, modelId, kind, start, end, weekday, createdOn = null) {

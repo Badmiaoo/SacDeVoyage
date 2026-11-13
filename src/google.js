@@ -1,4 +1,4 @@
-import { agendaEvents } from "./store.js?v=16"
+import { agendaEvents } from "./store.js?v=18"
 import { planCalendar, applyPlan } from "./agenda.js"
 
 export const CALENDAR_NAME = "Sac de voyage"
@@ -155,6 +155,10 @@ export function loadSession(storage) {
   const raw = storage.getItem(SESSION)
   if (!raw) return null
   return JSON.parse(raw)
+}
+
+export function clearSession(storage) {
+  storage.removeItem(SESSION)
 }
 
 export function saveSession(session, storage) {

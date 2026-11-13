@@ -1,10 +1,7 @@
 # Sac de voyage
 
-Le besoin est cadré. Le contrat est dans [openspec/specs](openspec/specs). L'application n'est pas encore construite.
+Application dans le navigateur. Les données restent sur l'appareil. L'agenda Google est un calendrier à part, nommé Sac de voyage.
 
-On construit une tranche à la fois. La première est [ouvrir un sac](openspec/changes/ouvrir-un-sac).
+Le contrat est dans [openspec/specs](openspec/specs). On ajoute une tranche à la fois, avec un test avant le code. GitHub Actions doit être vert avant la publication.
 
-L'application est générale et démarre vide. On l'ouvre soi-même. Rien ne dit de prendre un sac. La publication finale se fait avec GitHub Pages.
-La première tranche est utilisable en ouvrant `index.html`. Elle n'est pas encore publiée sur GitHub Pages.
-
-Les tests partent dans GitHub Actions avant la mise en ligne.
+Page : https://badmiaoo.github.io/SacDeVoyage/
