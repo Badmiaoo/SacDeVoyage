@@ -14,7 +14,12 @@ import {
 } from "./store.js"
 
 const app = document.querySelector("#app")
-let db = load()
+let db
+try {
+  db = load()
+} catch {
+  db = { version: 1, items: [], bagModels: [], bags: [], departureModels: [], departures: [] }
+}
 
 function persist(next) {
   db = next
@@ -35,10 +40,10 @@ function route() {
 
 function esc(value) {
   return String(value)
-    .replaceAll("&", "&")
-    .replaceAll("<", "<")
-    .replaceAll(">", ">")
-    .replaceAll('"', """)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
 }
 
 function layout(title, body) {
