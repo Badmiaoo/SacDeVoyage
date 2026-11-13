@@ -36,6 +36,8 @@ import {
   departureBagIds,
   resolveLines,
   agendaEvents,
+  missingChecks,
+  attention,
 } from "./store.js"
 import { googleApi, googleClientId, loadSession, syncDedicated } from "./google.js"
 
@@ -117,11 +119,24 @@ function draw() {
   drawBags()
 }
 
+function shownStatus(bag) {
+  if (missingChecks(db, bag).length) return "En défaut"
+  return statusLabel[bag.status] || ""
+}
+
+function faultNotice(bag) {
+  const missing = missingChecks(db, bag)
+  if (!missing.length) return ""
+  const names = missing.map((id) => esc(itemName(db, id))).join(", ")
+  return `<p class="alert">En défaut. Pas coché : ${names}</p>`
+}
+
 function drawBags() {
-  const cards = db.bags
+  const cards = [...db.bags]
+    .sort((a, b) => attention(db, a) - attention(db, b))
     .map((bag) => {
       const count = visibleLines(db, bag).length
-      return `<a class="row" href="#/sac/${bag.id}"><strong>${esc(bag.name)}</strong><span>${esc(statusLabel[bag.status] || "")} · ${count}</span></a>`
+      return `<a class="row" href="#/sac/${bag.id}"><strong>${esc(bag.name)}</strong><span>${esc(shownStatus(bag))} · ${count}</span></a>`
     })
     .join("")
   const options = db.bagModels.map((model) => `<option value="${model.id}">${esc(model.name)}</option>`).join("")
@@ -167,7 +182,7 @@ function drawBag(id) {
         <input name="qty" type="number" min="1" value="1">
         <button>Ajouter</button>
       </form>`
-  layout(bag.name, `<p class="empty">${esc(statusLabel[bag.status])}</p>${note}${lines || `<p class="empty">Rien à montrer.</p>`}${extra}${action}<button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
+  layout(bag.name, `<p class="empty">${esc(shownStatus(bag))}</p>${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${extra}${action}<button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
 }
 
 function daysBefore(offset) {
@@ -343,7 +358,8 @@ function drawDeparture(id) {
       const bag = db.bags.find((entry) => entry.id === bagId)
       if (!bag) return ""
       const stuff = resolveLines(db, bag).map((line) => esc(itemName(db, line.itemId))).join(", ")
-      return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${stuff}</span></a>`
+      const state = shownStatus(bag)
+      return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${esc(state)}${stuff ? ` · ${stuff}` : ""}</span></a>`
     })
     .join("")
   layout(departure.name, `<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}<button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)

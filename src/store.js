@@ -307,6 +307,18 @@ export function visibleLines(db, bag) {
   return lines
 }
 
+export function missingChecks(db, bag) {
+  if (bag.status !== "ready") return []
+  return resolveLines(db, bag).filter((line) => !bag.checks[line.itemId]).map((line) => line.itemId)
+}
+
+export function attention(db, bag) {
+  if (missingChecks(db, bag).length) return 0
+  if (bag.status === "emptying") return 1
+  if (bag.status === "filling") return 2
+  return 3
+}
+
 export function itemName(db, itemId) {
   return db.items.find((item) => item.id === itemId)?.name ?? ""
 }

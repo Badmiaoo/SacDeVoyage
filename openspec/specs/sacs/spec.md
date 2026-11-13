@@ -45,6 +45,17 @@ Après la sortie, l'ouverture du sac DOIT montrer seulement les affaires à sort
 - **WHEN** on ouvre Plongée après le mardi et que seul Stab est à sortir
 - **THEN** Stab est visible et le reste de la liste ne l'est pas
 
+### Requirement: Sac incomplet
+Un sac à l'état rempli dont une affaire visible n'est pas cochée NE DOIT PAS être présenté comme rempli. L'application DOIT afficher une alerte, et les affaires non cochées. L'agenda NE DOIT PAS recevoir cette alerte.
+
+#### Scenario: Stab oublié
+- **WHEN** Masque est coché et Stab ne l'est pas
+- **THEN** le sac est en défaut, Stab est nommé, et il n'est pas présenté comme rempli
+
+#### Scenario: Tout est coché
+- **WHEN** chaque affaire du sac est cochée
+- **THEN** il n'y a pas d'alerte et le sac est présenté comme rempli
+
 ### Requirement: États du sac
 Un sac DOIT avoir un seul état parmi rempli, à vider et à remplir. Après la sortie, un sac réglé sur tout sortir ou sur sortir les affaires marquées DOIT passer à « à vider ». Un sac réglé pour rester prêt DOIT rester rempli.
 
