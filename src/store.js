@@ -259,7 +259,7 @@ export function markEmptied(db, bagId) {
         if (bag.id !== bagId || bag.status !== "emptying") return bag
         const model = db.bagModels.find((entry) => entry.id === bag.modelId)
         const status = model?.afterUse === "marked" ? "filling" : "ready"
-        return { ...bag, status }
+        return { ...bag, status, checks: {} }
       }),
     },
   }
@@ -564,7 +564,7 @@ export function applyOutings(db, today) {
       if (!ids.has(bag.id) || bag.status !== "ready") return bag
       const recipe = db.bagModels.find((entry) => entry.id === bag.modelId)
       if (!recipe || recipe.afterUse === "stay") return bag
-      return { ...bag, status: "emptying" }
+      return { ...bag, status: "emptying", checks: {} }
     })
     return { ...departure, emptiedOn: when }
   })

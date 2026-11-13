@@ -38,7 +38,7 @@ import {
   agendaEvents,
   missingChecks,
   attention,
-} from "./store.js"
+} from "./store.js?v=14"
 import { dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 
 const app = document.querySelector("#app")

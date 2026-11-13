@@ -56,6 +56,10 @@ Un sac à l'état rempli dont une affaire visible n'est pas cochée NE DOIT PAS 
 - **WHEN** chaque affaire du sac est cochée
 - **THEN** il n'y a pas d'alerte et le sac est présenté comme rempli
 
+#### Scenario: Après la sortie
+- **WHEN** le sac était entièrement coché avant la sortie, puis on le vide
+- **THEN** ces coches ne comptent plus, et il n'est pas présenté comme rempli tant qu'on ne l'a pas recoché
+
 ### Requirement: États du sac
 Un sac DOIT avoir un seul état parmi rempli, à vider et à remplir. Après la sortie, un sac réglé sur tout sortir ou sur sortir les affaires marquées DOIT passer à « à vider ». Un sac réglé pour rester prêt DOIT rester rempli.
 
