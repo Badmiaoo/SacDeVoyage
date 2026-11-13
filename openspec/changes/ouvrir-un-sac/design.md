@@ -24,8 +24,11 @@ Le contrat complet est dans openspec/specs. Cette tranche n'en réalise qu'une p
 ## Decisions
 
 - Les données restent dans le navigateur. Il n'y a pas de compte.
+- Le premier code enregistre déjà toute la forme du contrat. Cette tranche n'en montre qu'une partie. Aucun champ n'est ajouté, renommé ou jeté plus tard.
+- Un enfant ne copie pas les lignes du modèle. Il ne garde que ses écarts. Ce qu'on affiche se calcule.
+- Le réglage après usage est déjà sur le modèle de sac. L'état rempli ou à vider est déjà sur l'enfant. L'écran ne les montre pas encore.
+- Un modèle de départ, un enfant de départ et la case d'une action existent déjà dans les données. L'agenda se déduit de ces actions. Il n'est pas une deuxième liste.
 - Un objet est partagé par son nom. Le nombre est sur la ligne du sac.
-- L'enfant de cette tranche affiche exactement les lignes de son modèle.
 
 ## Risks / Trade-offs
 

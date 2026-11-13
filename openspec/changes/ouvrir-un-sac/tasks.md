@@ -1,5 +1,10 @@
 # Tasks
 
+## 0. Forme des données
+
+- [ ] 0.1 Enregistrer la forme complète du contrat, y compris ce que cette tranche n'affiche pas
+- [ ] 0.2 Calculer le contenu d'un enfant depuis le modèle et ses écarts, sans en faire une copie
+
 ## 1. Objets
 
 - [ ] 1.1 Créer un objet avec un nom
