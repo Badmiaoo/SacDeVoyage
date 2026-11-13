@@ -1,5 +1,4 @@
 import {
-  load,
   save,
   createItem,
   renameItem,
@@ -51,17 +50,18 @@ import {
 } from "./store.js?v=18"
 import { clearSession, dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 import { formatDay, formatLine } from "./text.js"
+import { openDb, personalDb } from "./personal.js"
 
 const app = document.querySelector("#app")
 let departureKind = "once"
 let departureDraft = { name: "", model: "", start: "", end: "", weekday: "3" }
-const empty = { version: 1, items: [], bagModels: [], bags: [], departureModels: [], departures: [] }
 let db
 try {
-  db = applyOutings(load(), todayIso())
+  db = applyOutings(openDb(localStorage), todayIso())
   save(db)
 } catch {
-  db = empty
+  db = personalDb()
+  save(db)
 }
 
 const afterUseLabel = { stay: "Reste prêt", all: "Tout sortir", marked: "Sortir le marqué" }
