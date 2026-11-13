@@ -10,6 +10,7 @@ import {
   setRemoveAfter,
   removeModelLine,
   createBag,
+  addBagLine,
   toggleCheck,
   setBagQty,
   markEmptied,
@@ -22,6 +23,7 @@ import {
   addDepartureAction,
   createDeparture,
   toggleDepartureAction,
+  actionChecked,
   actionDate,
   applyOutings,
   todayIso,
@@ -143,7 +145,16 @@ function drawBag(id) {
       ? `<button data-action="filled" data-id="${bag.id}">C'est rempli</button>`
       : ""
   const note = bag.status === "emptying" ? `<p class="empty">Seulement ce qui doit sortir.</p>` : ""
-  layout(bag.name, `<p class="empty">${esc(statusLabel[bag.status])}</p>${note}${lines || `<p class="empty">Rien à montrer.</p>`}${action}<button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
+  const present = new Set(resolveLines(db, bag).map((line) => line.itemId))
+  const remaining = db.items.filter((item) => !present.has(item.id))
+  const extra = bag.status === "emptying" || !remaining.length
+    ? ""
+    : `<form data-action="bag-line">
+        <select name="item"><option value="">Ajouter dans ce sac seulement</option>${remaining.map((item) => `<option value="${item.id}">${esc(item.name)}</option>`).join("")}</select>
+        <input name="qty" type="number" min="1" value="1">
+        <button>Ajouter</button>
+      </form>`
+  layout(bag.name, `<p class="empty">${esc(statusLabel[bag.status])}</p>${note}${lines || `<p class="empty">Rien à montrer.</p>`}${extra}${action}<button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
 }
 
 function daysBefore(offset) {
@@ -305,7 +316,7 @@ function drawDeparture(id) {
   const when = departure.kind === "once" ? `${departure.start} → ${departure.end}` : `Chaque ${weekdays[departure.weekday]}`
   const actions = (model?.actions || [])
     .map((action) => {
-      const on = departure.done[action.id] ? "on" : ""
+      const on = actionChecked(departure, action) ? "on" : ""
       return `<button class="check ${on}" data-action="trip-check" data-id="${action.id}">
         <span>${esc(action.label)}</span><span>${esc(daysBefore(action.offsetDays))} · ${esc(actionDate(departure, action, today))}</span>
       </button>`
@@ -356,6 +367,13 @@ app.addEventListener("submit", (event) => {
     persist(result.db)
     location.hash = `#/sac/${result.bag.id}`
   }
+  if (action === "bag-line") {
+    const item = data.get("item")
+    if (!item) return
+    const result = addBagLine(db, page.id, item, data.get("qty"))
+    if (result.error) return alert(result.error)
+    persist(result.db)
+  }
   if (action === "dmodel") {
     const result = createDepartureModel(db, data.get("name"))
     if (result.error) return alert(result.error)
@@ -376,6 +394,7 @@ app.addEventListener("submit", (event) => {
       data.get("start"),
       data.get("end"),
       data.get("weekday"),
+      todayIso(),
     )
     if (result.error) return alert(result.error)
     persist(result.db)
@@ -400,7 +419,7 @@ app.addEventListener("click", (event) => {
   if (action === "emptied") persist(markEmptied(db, target.dataset.id).db)
   if (action === "filled") persist(markFilled(db, target.dataset.id).db)
   if (action === "trip-bag") persist(toggleDepartureBag(db, page.id, target.dataset.id).db)
-  if (action === "trip-check") persist(toggleDepartureAction(db, page.id, target.dataset.id).db)
+  if (action === "trip-check") persist(toggleDepartureAction(db, page.id, target.dataset.id, todayIso()).db)
   if (action === "delete-bag") {
     location.hash = "#/"
     persist(deleteBag(db, target.dataset.id).db)

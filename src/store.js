@@ -123,6 +123,7 @@ export function setAfterUse(db, modelId, afterUse) {
 }
 
 export function setModelLine(db, modelId, itemId, qty) {
+  if (!db.items.some((item) => item.id === itemId)) return { db }
   const count = Math.max(1, Number(qty) || 1)
   return {
     db: {
@@ -164,6 +165,14 @@ export function removeModelLine(db, modelId, itemId) {
           ? { ...model, lines: model.lines.filter((line) => line.itemId !== itemId) }
           : model,
       ),
+      bags: db.bags.map((bag) => {
+        if (bag.modelId !== modelId || bag.added.some((line) => line.itemId === itemId)) return bag
+        const qty = { ...bag.qty }
+        const checks = { ...bag.checks }
+        delete qty[itemId]
+        delete checks[itemId]
+        return { ...bag, qty, checks }
+      }),
     },
   }
 }
@@ -184,6 +193,28 @@ export function createBag(db, name, modelId) {
     checks: {},
   }
   return { db: { ...db, bags: [...db.bags, bag] }, bag }
+}
+
+export function addBagLine(db, bagId, itemId, qty) {
+  if (!db.items.some((item) => item.id === itemId)) return { db, error: "L'objet n'existe pas." }
+  const count = Math.max(1, Number(qty) || 1)
+  return {
+    db: {
+      ...db,
+      bags: db.bags.map((bag) => {
+        if (bag.id !== bagId) return bag
+        const model = db.bagModels.find((entry) => entry.id === bag.modelId)
+        if (model?.lines.some((line) => line.itemId === itemId)) return bag
+        if (bag.added.some((line) => line.itemId === itemId)) {
+          return {
+            ...bag,
+            added: bag.added.map((line) => (line.itemId === itemId ? { ...line, qty: count } : line)),
+          }
+        }
+        return { ...bag, added: [...bag.added, { itemId, qty: count, removeAfter: false }] }
+      }),
+    },
+  }
 }
 
 export function toggleCheck(db, bagId, itemId) {
@@ -292,6 +323,7 @@ export function createDepartureModel(db, name) {
 }
 
 export function toggleDepartureBag(db, modelId, bagId) {
+  if (!db.bags.some((bag) => bag.id === bagId)) return { db }
   return {
     db: {
       ...db,
@@ -321,16 +353,18 @@ export function addDepartureAction(db, modelId, label, daysBefore) {
   }
 }
 
-export function createDeparture(db, name, modelId, kind, start, end, weekday) {
+export function createDeparture(db, name, modelId, kind, start, end, weekday, createdOn = null) {
   const trimmed = name.trim()
   if (!trimmed) return { db, error: "Le nom est vide." }
   if (!db.departureModels.some((model) => model.id === modelId)) {
     return { db, error: "Le modèle n'existe pas." }
   }
+  if (kind !== "once" && kind !== "recurring") return { db, error: "Le type n'existe pas." }
   if (kind === "once" && (!start || !end || end < start)) {
     return { db, error: "Il faut un début et une fin." }
   }
-  if (kind === "recurring" && weekday === "") {
+  const day = Number(weekday)
+  if (kind === "recurring" && (weekday === "" || !Number.isInteger(day) || day < 0 || day > 6)) {
     return { db, error: "Il faut un jour." }
   }
   const departure = {
@@ -340,22 +374,56 @@ export function createDeparture(db, name, modelId, kind, start, end, weekday) {
     kind,
     start: kind === "once" ? start : null,
     end: kind === "once" ? end : null,
-    weekday: kind === "recurring" ? Number(weekday) : null,
+    weekday: kind === "recurring" ? day : null,
     done: {},
     emptiedOn: null,
+    createdOn,
   }
   return { db: { ...db, departures: [...db.departures, departure] }, departure }
 }
 
-export function toggleDepartureAction(db, departureId, actionId) {
+function firstOnOrAfter(iso, weekday) {
+  const delta = (weekday - weekdayOf(iso) + 7) % 7
+  return addDays(iso, delta)
+}
+
+export function currentOccurrence(departure, action, today) {
+  if (departure.kind === "once") {
+    if (!departure.start) return null
+    if (departure.done[action.id] === departure.start) return null
+    return departure.start
+  }
+  if (departure.weekday == null) return null
+  const created = departure.createdOn || today
+  let day = firstOnOrAfter(created, departure.weekday)
+  const done = departure.done[action.id]
+  if (typeof done === "string") {
+    while (day <= done) day = addDays(day, 7)
+  }
+  return day
+}
+
+export function actionChecked(departure, action) {
+  return departure.kind === "once" && departure.done[action.id] === departure.start
+}
+
+export function toggleDepartureAction(db, departureId, actionId, today) {
   return {
     db: {
       ...db,
       departures: db.departures.map((departure) => {
         if (departure.id !== departureId) return departure
+        const model = db.departureModels.find((entry) => entry.id === departure.modelId)
+        const action = model?.actions.find((entry) => entry.id === actionId)
+        if (!action) return departure
         const done = { ...departure.done }
-        if (done[actionId]) delete done[actionId]
-        else done[actionId] = true
+        const day = currentOccurrence(departure, action, today)
+        if (!day) {
+          delete done[actionId]
+          return { ...departure, done }
+        }
+        if (addDays(day, action.offsetDays) > today) return departure
+        done[actionId] = day
         return { ...departure, done }
       }),
     },
@@ -373,15 +441,40 @@ export function departureBagIds(db, departure) {
 }
 
 export function actionDate(departure, action, today) {
-  const base = departure.kind === "once" ? departure.start : nextWeekday(today, departure.weekday)
-  if (!base) return ""
-  return addDays(base, action.offsetDays)
+  const day = currentOccurrence(departure, action, today) ?? (departure.kind === "once" ? departure.start : null)
+  if (!day) return ""
+  return addDays(day, action.offsetDays)
 }
 
 function outingDate(departure, today) {
   if (departure.kind === "once") return departure.end
-  if (departure.kind === "recurring") return passedWeekday(today, departure.weekday)
-  return null
+  if (departure.kind !== "recurring" || departure.weekday == null) return null
+  const created = departure.createdOn || today
+  let day = firstOnOrAfter(created, departure.weekday)
+  if (day >= today) return null
+  let last = day
+  while (addDays(last, 7) < today) last = addDays(last, 7)
+  return last
+}
+
+export function agendaEvents(db, today) {
+  const events = []
+  for (const departure of db.departures) {
+    const model = db.departureModels.find((entry) => entry.id === departure.modelId)
+    if (!model) continue
+    for (const action of model.actions) {
+      const day = currentOccurrence(departure, action, today)
+      if (!day) continue
+      const since = addDays(day, action.offsetDays)
+      if (since > today) continue
+      events.push({ kind: "action", title: action.label, since })
+    }
+  }
+  for (const bag of db.bags) {
+    if (bag.status === "emptying") events.push({ kind: "bag", title: `${bag.name}, à vider`, since: today })
+    if (bag.status === "filling") events.push({ kind: "bag", title: `${bag.name}, à remplir`, since: today })
+  }
+  return events
 }
 
 
@@ -436,13 +529,20 @@ export function removeDepartureAction(db, modelId, actionId) {
           ? { ...model, actions: model.actions.filter((action) => action.id !== actionId) }
           : model,
       ),
+      departures: db.departures.map((departure) => {
+        if (departure.modelId !== modelId) return departure
+        const done = { ...departure.done }
+        delete done[actionId]
+        return { ...departure, done }
+      }),
     },
   }
 }
 
 export function applyOutings(db, today) {
   let bags = db.bags
-  const departures = db.departures.map((departure) => {
+  const departures = db.departures.map((raw) => {
+    const departure = raw.createdOn ? raw : { ...raw, createdOn: today }
     const when = outingDate(departure, today)
     if (!when || today <= when || departure.emptiedOn === when) return departure
     const model = db.departureModels.find((entry) => entry.id === departure.modelId)
