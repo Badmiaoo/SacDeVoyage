@@ -467,12 +467,12 @@ export function agendaEvents(db, today) {
       if (!day) continue
       const since = addDays(day, action.offsetDays)
       if (since > today) continue
-      events.push({ kind: "action", title: action.label, since })
+      events.push({ kind: "action", key: `action:${departure.id}:${action.id}:${day}`, title: action.label, since })
     }
   }
   for (const bag of db.bags) {
-    if (bag.status === "emptying") events.push({ kind: "bag", title: `${bag.name}, à vider`, since: today })
-    if (bag.status === "filling") events.push({ kind: "bag", title: `${bag.name}, à remplir`, since: today })
+    if (bag.status === "emptying") events.push({ kind: "bag", key: `bag:${bag.id}:emptying`, title: `${bag.name}, à vider`, since: today })
+    if (bag.status === "filling") events.push({ kind: "bag", key: `bag:${bag.id}:filling`, title: `${bag.name}, à remplir`, since: today })
   }
   return events
 }

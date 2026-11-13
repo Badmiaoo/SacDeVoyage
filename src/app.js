@@ -35,6 +35,7 @@ import {
   departureFields,
   departureBagIds,
   resolveLines,
+  agendaEvents,
 } from "./store.js"
 
 const app = document.querySelector("#app")
@@ -272,7 +273,10 @@ function drawDepartures() {
         <button>Créer le départ</button>
       </form>`
     : `<p class="empty">D'abord, crée un modèle de départ dans Modèles.</p>`
-  layout("Départs", `${trips || `<p class="empty">Aucun départ.</p>`}<h2>Nouveau</h2>${create}`)
+  const agenda = agendaEvents(db, todayIso())
+    .map((event) => `<div class="row"><strong>${esc(event.title)}</strong><span>depuis ${esc(event.since)}</span></div>`)
+    .join("")
+  layout("Départs", `${trips || `<p class="empty">Aucun départ.</p>`}<h2>Dans l'agenda</h2>${agenda || `<p class="empty">Rien en attente.</p>`}<h2>Nouveau</h2>${create}`)
 }
 
 function drawDepartureModel(id) {
