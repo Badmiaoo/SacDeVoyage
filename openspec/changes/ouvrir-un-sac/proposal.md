@@ -1,16 +1,25 @@
-# Ouvrir un sac
+# Proposal
 
-## Pourquoi
+## Why
 
-Sans ouvrir un sac et voir ce qui doit être dedans, le reste ne sert à rien.
+Sans ouvrir un sac et voir ce qui doit être dedans, le reste du contrat ne peut pas être construit.
 
-## Quoi
+## What Changes
 
-- Créer un objet, avec un nom.
-- Créer un modèle de sac, avec des affaires et un nombre pour chacune.
-- Créer un enfant à partir de ce modèle, et le nommer.
-- Ouvrir l'enfant. Voir toute la liste. Cocher.
+- Créer un objet, avec un nom unique.
+- Créer un modèle de sac, avec des lignes objet et nombre.
+- Créer un enfant nommé à partir de ce modèle.
+- Ouvrir l'enfant, voir toute la liste, cocher.
 
-## Pas dans cette tranche
+## Capabilities
 
-Départs, J-x, agenda, après usage, modifications propres à l'enfant.
+### New Capabilities
+
+- `objets`: le catalogue, limité au nom unique pour cette tranche
+- `sacs`: le modèle, l'enfant, l'ouverture et la coche
+
+### Modified Capabilities
+
+## Impact
+
+Première tranche seulement. Pas de départ, pas d'agenda, pas d'après-usage, pas d'écart d'enfant. Les données restent dans le navigateur. Pas de serveur.
