@@ -37,6 +37,7 @@ import {
   resolveLines,
   agendaEvents,
 } from "./store.js"
+import { googleApi, googleClientId, loadSession, syncDedicated } from "./google.js"
 
 const app = document.querySelector("#app")
 let departureKind = "once"
@@ -58,6 +59,17 @@ function persist(next) {
   db = applyOutings(next, todayIso())
   save(db)
   draw()
+  void pushAgenda()
+}
+
+async function pushAgenda() {
+  const session = loadSession(localStorage)
+  if (!session?.accessToken || !googleClientId) return
+  try {
+    await syncDedicated(db, todayIso(), googleApi({ fetch: globalThis.fetch.bind(globalThis), token: session.accessToken }))
+  } catch {
+    // Le sac reste enregistré. L'agenda réessaiera au prochain geste.
+  }
 }
 
 function route() {
