@@ -1,0 +1,8 @@
+{
+  "name": "sac-de-voyage",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
