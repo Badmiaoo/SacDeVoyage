@@ -141,14 +141,30 @@ function drawBag(id) {
   layout(bag.name, `<p class="empty">${esc(statusLabel[bag.status])}</p>${note}${lines || `<p class="empty">Rien à montrer.</p>`}${action}<button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
 }
 
+function daysBefore(offset) {
+  const days = -offset
+  if (days === 0) return "le jour du départ"
+  if (days === 1) return "la veille"
+  return `${days} jours avant`
+}
+
 function drawModels() {
-  const cards = db.bagModels
-    .map((model) => `<a class="row" href="#/modeles/${model.id}"><strong>${esc(model.name)}</strong><span>${model.lines.length}</span></a>`)
+  const bags = db.bagModels
+    .map((model) => `<a class="row" href="#/modeles/${model.id}"><strong>${esc(model.name)}</strong><span>Sac</span></a>`)
+    .join("")
+  const trips = db.departureModels
+    .map((model) => `<a class="row" href="#/dmodele/${model.id}"><strong>${esc(model.name)}</strong><span>Départ</span></a>`)
     .join("")
   layout(
     "Modèles",
-    `${cards || `<p class="empty">Aucun modèle.</p>`}
-    <form data-action="model"><input name="name" placeholder="Nom du modèle" required><button>Créer le modèle</button></form>`,
+    `<h2>Sacs</h2>
+    <p class="empty">Ce qui doit être dans le sac.</p>
+    ${bags || `<p class="empty">Aucun.</p>`}
+    <form data-action="model"><input name="name" placeholder="Nom, par exemple Plongée" required><button>Créer un modèle de sac</button></form>
+    <h2>Départs</h2>
+    <p class="empty">Quels sacs partent, et quoi faire avant. Pas de date ici.</p>
+    ${trips || `<p class="empty">Aucun.</p>`}
+    <form data-action="dmodel"><input name="name" placeholder="Nom, par exemple Avec avion" required><button>Créer un modèle de départ</button></form>`,
   )
 }
 
@@ -206,44 +222,34 @@ function drawItems() {
 function drawDepartures() {
   const trips = db.departures
     .map((departure) => {
-      const when = departure.kind === "once" ? `${departure.start} → ${departure.end}` : `Chaque ${weekdays[departure.weekday]}`
+      const when = departure.kind === "once"
+        ? `Du ${departure.start} au ${departure.end}`
+        : `Tous les ${weekdays[departure.weekday].toLowerCase()}s`
       return `<div class="line">
         <a class="row" href="#/departs/${departure.id}"><strong>${esc(departure.name)}</strong><span>${esc(when)}</span></a>
         <button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer</button>
       </div>`
     })
     .join("")
-  const models = db.departureModels
-    .map((model) => `<a class="row" href="#/dmodele/${model.id}"><strong>${esc(model.name)}</strong><span>Modifier</span></a>`)
-    .join("")
   const options = db.departureModels.map((model) => `<option value="${model.id}">${esc(model.name)}</option>`).join("")
   const days = weekdays.map((label, index) => `<option value="${index}">${label}</option>`).join("")
   const create = db.departureModels.length
     ? `<form data-action="departure">
-        <label>Modèle<select name="model">${options}</select></label>
-        <label>Nom<input name="name" placeholder="CSE juin" required></label>
-        <label>Quand
+        <label>À partir du modèle<select name="model">${options}</select></label>
+        <label>Nom de cette fois<input name="name" placeholder="CSE juin" required></label>
+        <label>Ça revient ?
           <select name="kind">
-            <option value="once">Une fois, avec un début et une fin</option>
-            <option value="recurring">Chaque semaine</option>
+            <option value="once">Non, une seule fois</option>
+            <option value="recurring">Oui, toutes les semaines</option>
           </select>
         </label>
-        <label data-once>Début<input name="start" type="date" required></label>
-        <label data-once>Fin<input name="end" type="date" required></label>
-        <label data-week hidden>Jour<select name="weekday">${days}</select></label>
+        <label data-once>Le jour où tu pars<input name="start" type="date" required></label>
+        <label data-once>Le jour où tu rentres<input name="end" type="date" required></label>
+        <label data-week hidden>Tous les<select name="weekday">${days}</select></label>
         <button>Créer le départ</button>
       </form>`
-    : ""
-  layout(
-    "Départs",
-    `<p class="empty">Un modèle dit quels sacs et quelles actions. Un départ, c'est une fois : des dates, ou un jour de la semaine.</p>
-    <h2>1. Le modèle</h2>
-    ${models || `<p class="empty">Aucun modèle.</p>`}
-    <form data-action="dmodel"><input name="name" placeholder="Nom du modèle, par exemple Avec avion" required><button>Créer le modèle</button></form>
-    <h2>2. Le départ</h2>
-    ${trips || `<p class="empty">Aucun départ.</p>`}
-    ${create}`,
-  )
+    : `<p class="empty">D'abord, crée un modèle de départ dans Modèles.</p>`
+  layout("Départs", `${trips || `<p class="empty">Aucun départ.</p>`}<h2>Nouveau</h2>${create}`)
 }
 
 function drawDepartureModel(id) {
@@ -257,25 +263,25 @@ function drawDepartureModel(id) {
     .join("")
   const actions = model.actions
     .map((action) => `<div class="line">
-      <div class="row"><strong>${esc(action.label)}</strong><span>J${action.offsetDays}</span></div>
+      <div class="row"><strong>${esc(action.label)}</strong><span>${esc(daysBefore(action.offsetDays))}</span></div>
       <button class="quiet" data-action="delete-action" data-id="${action.id}">Retirer</button>
     </div>`)
     .join("")
   layout(
     model.name,
-    `<p class="empty">Pas de date ici. Choisis les sacs, puis les actions à faire avant le départ.</p>
-    <h2>Sacs</h2>
+    `<p class="empty">Pas de date. Seulement les sacs, et ce qu'il faut faire avant le jour du départ.</p>
+    <h2>Sacs qui partent</h2>
     ${bags || `<p class="empty">Crée d'abord un sac.</p>`}
-    <h2>Actions</h2>
-    <p class="empty">30 veut dire J-30, le jour du début.</p>
+    <h2>Avant le départ</h2>
     ${actions}
     <form data-action="action">
-      <input name="label" placeholder="Vérifier les papiers" required>
-      <input name="days" type="number" min="0" value="30" class="qty">
+      <label>Quoi faire<input name="label" placeholder="Vérifier les papiers" required></label>
+      <label>Combien de jours avant<input name="days" type="number" min="0" value="30"></label>
+      <p class="empty">0, le jour même. 1, la veille. 30, trente jours avant.</p>
       <button>Ajouter</button>
     </form>
     <button class="quiet" data-action="delete-dmodel" data-id="${model.id}">Supprimer ce modèle</button>
-    <a class="back" href="#/departs">Retour</a>`,
+    <a class="back" href="#/modeles">Retour</a>`,
   )
 }
 
@@ -289,7 +295,7 @@ function drawDeparture(id) {
     .map((action) => {
       const on = departure.done[action.id] ? "on" : ""
       return `<button class="check ${on}" data-action="trip-check" data-id="${action.id}">
-        <span>${esc(action.label)}</span><span>${esc(actionDate(departure, action, today))}</span>
+        <span>${esc(action.label)}</span><span>${esc(daysBefore(action.offsetDays))} · ${esc(actionDate(departure, action, today))}</span>
       </button>`
     })
     .join("")
