@@ -30,9 +30,14 @@ import {
   deleteDeparture,
   deleteDepartureModel,
   removeDepartureAction,
+  departureFields,
+  departureBagIds,
+  resolveLines,
 } from "./store.js"
 
 const app = document.querySelector("#app")
+let departureKind = "once"
+let departureDraft = { name: "", model: "", start: "", end: "", weekday: "3" }
 const empty = { version: 1, items: [], bagModels: [], bags: [], departureModels: [], departures: [] }
 let db
 try {
@@ -231,21 +236,28 @@ function drawDepartures() {
       </div>`
     })
     .join("")
-  const options = db.departureModels.map((model) => `<option value="${model.id}">${esc(model.name)}</option>`).join("")
-  const days = weekdays.map((label, index) => `<option value="${index}">${label}</option>`).join("")
+  const options = db.departureModels
+    .map((model) => `<option value="${model.id}" ${model.id === departureDraft.model ? "selected" : ""}>${esc(model.name)}</option>`)
+    .join("")
+  const days = weekdays
+    .map((label, index) => `<option value="${index}" ${String(index) === departureDraft.weekday ? "selected" : ""}>${label}</option>`)
+    .join("")
+  const fields = departureFields(departureKind)
+  const when = fields.includes("weekday")
+    ? `<label>Tous les<select name="weekday">${days}</select></label>`
+    : `<label>Le jour où tu pars<input name="start" type="date" value="${esc(departureDraft.start)}" required></label>
+       <label>Le jour où tu rentres<input name="end" type="date" value="${esc(departureDraft.end)}" required></label>`
   const create = db.departureModels.length
     ? `<form data-action="departure">
         <label>À partir du modèle<select name="model">${options}</select></label>
-        <label>Nom de cette fois<input name="name" placeholder="CSE juin" required></label>
+        <label>Nom de cette fois<input name="name" value="${esc(departureDraft.name)}" placeholder="CSE juin" required></label>
         <label>Ça revient ?
           <select name="kind">
-            <option value="once">Non, une seule fois</option>
-            <option value="recurring">Oui, toutes les semaines</option>
+            <option value="once" ${departureKind === "once" ? "selected" : ""}>Non, une seule fois</option>
+            <option value="recurring" ${departureKind === "recurring" ? "selected" : ""}>Oui, toutes les semaines</option>
           </select>
         </label>
-        <label data-once>Le jour où tu pars<input name="start" type="date" required></label>
-        <label data-once>Le jour où tu rentres<input name="end" type="date" required></label>
-        <label data-week hidden>Tous les<select name="weekday">${days}</select></label>
+        ${when}
         <button>Créer le départ</button>
       </form>`
     : `<p class="empty">D'abord, crée un modèle de départ dans Modèles.</p>`
@@ -299,8 +311,13 @@ function drawDeparture(id) {
       </button>`
     })
     .join("")
-  const bags = (model?.bagIds || [])
-    .map((bagId) => `<a class="row" href="#/sac/${bagId}"><strong>${esc(bagName(db, bagId))}</strong></a>`)
+  const bags = departureBagIds(db, departure)
+    .map((bagId) => {
+      const bag = db.bags.find((entry) => entry.id === bagId)
+      if (!bag) return ""
+      const stuff = resolveLines(db, bag).map((line) => esc(itemName(db, line.itemId))).join(", ")
+      return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${stuff}</span></a>`
+    })
     .join("")
   layout(departure.name, `<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}<button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
 }
@@ -410,9 +427,16 @@ app.addEventListener("change", (event) => {
     persist(setAfterUse(db, page.id, input.value).db)
   }
   if (input instanceof HTMLSelectElement && input.name === "kind" && input.form) {
-    const once = input.value === "once"
-    for (const node of input.form.querySelectorAll("[data-once]")) node.hidden = !once
-    for (const node of input.form.querySelectorAll("[data-week]")) node.hidden = once
+    const form = input.form
+    departureDraft = {
+      name: form.name.value,
+      model: form.model.value,
+      start: form.start?.value || "",
+      end: form.end?.value || "",
+      weekday: form.weekday?.value || departureDraft.weekday,
+    }
+    departureKind = input.value
+    draw()
   }
   if (!(input instanceof HTMLInputElement)) return
   if (input.dataset.action === "qty") persist(setModelLine(db, page.id, input.dataset.id, input.value).db)

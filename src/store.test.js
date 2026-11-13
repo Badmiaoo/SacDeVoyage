@@ -19,6 +19,8 @@ import {
   createDeparture,
   actionDate,
   applyOutings,
+  departureFields,
+  departureBagIds,
   markEmptied,
   visibleLines,
 } from "./store.js"
@@ -129,4 +131,49 @@ test("après la fin, seul le sac concerné passe à vider", () => {
   db = markEmptied(db, bag.bag.id).db
   assert.equal(db.bags.find((entry) => entry.id === bag.bag.id).status, "filling")
   assert.equal(visibleLines(db, db.bags.find((entry) => entry.id === bag.bag.id)).length, resolveLines(db, db.bags[0]).length)
+})
+
+test("une seule fois ne demande pas le jour de la semaine", () => {
+  assert.deepEqual(departureFields("once"), ["start", "end"])
+  assert.deepEqual(departureFields("recurring"), ["weekday"])
+})
+
+test("un sac ajouté au modèle après le départ y apparaît", () => {
+  let db = emptyDb()
+  const first = createBagModel(db, "Cabine")
+  db = first.db
+  const second = createBagModel(db, "Soute")
+  db = second.db
+  const cabin = createBag(db, "Cabine du mercredi", first.model.id)
+  db = cabin.db
+  const hold = createBag(db, "Soute", second.model.id)
+  db = hold.db
+  const model = createDepartureModel(db, "Avec avion")
+  db = model.db
+  db = toggleDepartureBag(db, model.model.id, cabin.bag.id).db
+  db = createDeparture(db, "CSE juin", model.model.id, "once", "2026-08-12", "2026-08-20", "").db
+  db = toggleDepartureBag(db, model.model.id, hold.bag.id).db
+  const ids = departureBagIds(db, db.departures[0])
+  assert.deepEqual(ids, [cabin.bag.id, hold.bag.id])
+})
+
+test("un objet ajouté au sac après le départ est dans le sac", () => {
+  let db = emptyDb()
+  const masque = createItem(db, "Masque")
+  db = masque.db
+  const palmes = createItem(db, "Palmes")
+  db = palmes.db
+  const recipe = createBagModel(db, "Plongée")
+  db = recipe.db
+  db = setModelLine(db, recipe.model.id, masque.item.id, 1).db
+  const bag = createBag(db, "Plongée du mardi", recipe.model.id)
+  db = bag.db
+  const model = createDepartureModel(db, "Club")
+  db = model.db
+  db = toggleDepartureBag(db, model.model.id, bag.bag.id).db
+  db = createDeparture(db, "Sortie", model.model.id, "once", "2026-11-01", "2026-11-02", "").db
+  db = setModelLine(db, recipe.model.id, palmes.item.id, 1).db
+  const names = resolveLines(db, db.bags[0]).map((line) => line.itemId)
+  assert.deepEqual(names, [masque.item.id, palmes.item.id])
+  assert.deepEqual(departureBagIds(db, db.departures[0]), [bag.bag.id])
 })

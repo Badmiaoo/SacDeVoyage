@@ -54,3 +54,5 @@ input.qty { flex: 0 0 4.5rem; }
 h2 { font-size: 1.15rem; margin: 1.3rem 0 0.4rem; }
 label { display: flex; flex-direction: column; gap: 0.25rem; width: 100%; }
 button.quiet { background: transparent; color: #1c1915; }
+
+[hidden] { display: none !important; }

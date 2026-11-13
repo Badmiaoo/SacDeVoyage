@@ -362,6 +362,16 @@ export function toggleDepartureAction(db, departureId, actionId) {
   }
 }
 
+
+export function departureFields(kind) {
+  return kind === "recurring" ? ["weekday"] : ["start", "end"]
+}
+
+export function departureBagIds(db, departure) {
+  const model = db.departureModels.find((entry) => entry.id === departure.modelId)
+  return model ? model.bagIds : []
+}
+
 export function actionDate(departure, action, today) {
   const base = departure.kind === "once" ? departure.start : nextWeekday(today, departure.weekday)
   if (!base) return ""
