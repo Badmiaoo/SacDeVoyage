@@ -41,9 +41,27 @@ Après la sortie, l'ouverture du sac DOIT montrer seulement les affaires à sort
 - **WHEN** on ouvre Plongée après le mardi et que seul Stab est à sortir
 - **THEN** Stab est visible et le reste de la liste ne l'est pas
 
+### Requirement: États du sac
+Un sac DOIT avoir un seul état parmi rempli, à vider et à remplir. Après la sortie, un sac réglé sur tout sortir ou sur sortir les affaires marquées DOIT passer à « à vider ». Un sac réglé pour rester prêt DOIT rester rempli.
+
+#### Scenario: Après la plongée
+- **WHEN** la sortie de Plongée est passée et le réglage est de sortir les affaires marquées
+- **THEN** l'état du sac est à vider
+
+### Requirement: Après avoir vidé
+Marquer un sac comme vidé DOIT quitter l'état « à vider ». Si son réglage est de sortir seulement les affaires marquées, il DOIT passer à « à remplir ». Si son réglage est de tout sortir, il NE DOIT PAS passer à « à remplir ».
+
+#### Scenario: Matériel humide sorti
+- **WHEN** on marque Plongée comme vidé et que seules des affaires marquées devaient sortir
+- **THEN** l'état devient à remplir
+
+#### Scenario: Valise vidée
+- **WHEN** on marque une valise réglée sur tout sortir comme vidée
+- **THEN** elle n'est plus à vider et elle n'est pas à remplir
+
 ### Requirement: Retour à rempli
-Le retour à l'état rempli DOIT être manuel. L'application NE DOIT PAS le faire passer toute seule, et NE DOIT PAS le rappeler.
+Le passage à l'état rempli DOIT être manuel.
 
 #### Scenario: Remise du matériel
-- **WHEN** Stab est sec et remis dans le sac
-- **THEN** le sac reste à vider tant qu'on ne le passe pas soi-même sur rempli
+- **WHEN** Stab est sec et remis dans le sac et qu'on passe le sac sur rempli
+- **THEN** l'état est rempli

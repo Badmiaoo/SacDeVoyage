@@ -6,7 +6,7 @@ context: |
   Un modèle décide du contenu. Un enfant porte le nom donné par la personne.
   Le nombre d'un objet est propre à chaque sac. Le nom d'un objet est unique et se propage.
   Un départ en une fois a un début et une fin. Un départ récurrent n'a pas de dates à saisir.
-  L'agenda est à part et ne reçoit que les actions en J-x.
+  L'agenda est à part. Il reçoit les actions en J-x, et un rappel par sac à vider ou à remplir.
   Hors sujet : partage, animal, intelligence artificielle, écran « prends le sac ».
   Publication finale : GitHub Pages. Pas de serveur dans la première tranche.
   Le premier code enregistre toute la forme du contrat. Les écrans suivants ne font qu'afficher ce qui est déjà stocké.
