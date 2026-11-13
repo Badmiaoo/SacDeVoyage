@@ -143,6 +143,26 @@ export function toggleCheck(db, bagId, itemId) {
   }
 }
 
+
+export function setBagQty(db, bagId, itemId, qty) {
+  const count = Math.max(1, Number(qty) || 1)
+  return {
+    db: {
+      ...db,
+      bags: db.bags.map((bag) => {
+        if (bag.id !== bagId) return bag
+        const model = db.bagModels.find((entry) => entry.id === bag.modelId)
+        const base = model?.lines.find((line) => line.itemId === itemId)?.qty
+          ?? bag.added.find((line) => line.itemId === itemId)?.qty
+        const next = { ...bag.qty }
+        if (base === count) delete next[itemId]
+        else next[itemId] = count
+        return { ...bag, qty: next }
+      }),
+    },
+  }
+}
+
 export function resolveLines(db, bag) {
   const model = db.bagModels.find((entry) => entry.id === bag.modelId)
   if (!model) return []

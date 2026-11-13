@@ -10,6 +10,7 @@ import {
   createBag,
   toggleCheck,
   resolveLines,
+  setBagQty,
 } from "./store.js"
 
 test("refuse un objet du même nom", () => {
@@ -64,4 +65,19 @@ test("cocher puis décocher", () => {
   assert.equal(db.bags[0].checks[item.item.id], true)
   db = toggleCheck(db, db.bags[0].id, item.item.id).db
   assert.equal(db.bags[0].checks[item.item.id], undefined)
+})
+
+test("le nombre d'un enfant ne change pas le modèle", () => {
+  let db = emptyDb()
+  const item = createItem(db, "Masque")
+  db = item.db
+  const model = createBagModel(db, "Plongée")
+  db = model.db
+  db = setModelLine(db, model.model.id, item.item.id, 1).db
+  db = createBag(db, "Mardi", model.model.id).db
+  db = setBagQty(db, db.bags[0].id, item.item.id, 3).db
+  assert.equal(db.bagModels[0].lines[0].qty, 1)
+  assert.equal(resolveLines(db, db.bags[0])[0].qty, 3)
+  db = setModelLine(db, model.model.id, item.item.id, 4).db
+  assert.equal(resolveLines(db, db.bags[0])[0].qty, 3)
 })

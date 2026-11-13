@@ -9,6 +9,7 @@ import {
   removeModelLine,
   createBag,
   toggleCheck,
+  setBagQty,
   resolveLines,
   itemName,
 } from "./store.js"
@@ -92,9 +93,12 @@ function drawBag(id) {
   const lines = resolveLines(db, bag)
     .map((line) => {
       const on = bag.checks[line.itemId] ? "on" : ""
-      return `<button class="check ${on}" data-action="check" data-id="${line.itemId}">
-        <span>${esc(itemName(db, line.itemId))}</span><span>${line.qty}</span>
-      </button>`
+      return `<div class="line">
+        <button class="check ${on}" data-action="check" data-id="${line.itemId}">
+          <span>${esc(itemName(db, line.itemId))}</span>
+        </button>
+        <input class="qty" data-action="bag-qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">
+      </div>`
     })
     .join("")
   layout(bag.name, `${lines || `<p class="empty">Ce modèle est vide.</p>`}<a class="back" href="#/">Retour</a>`)
@@ -123,16 +127,20 @@ function drawModel(id) {
       </div>`,
     )
     .join("")
-  const options = db.items
+  const used = new Set(model.lines.map((line) => line.itemId))
+  const remaining = db.items.filter((item) => !used.has(item.id))
+  const options = remaining
     .map((item) => `<option value="${item.id}">${esc(item.name)}</option>`)
     .join("")
-  const form = db.items.length
-    ? `<form data-action="line">
-        <select name="item">${options}</select>
-        <input name="qty" type="number" min="1" value="1">
-        <button>Ajouter</button>
-      </form>`
-    : `<p class="empty">Crée d'abord un objet.</p>`
+  const form = !db.items.length
+    ? `<p class="empty">Crée d'abord un objet.</p>`
+    : remaining.length
+      ? `<form data-action="line">
+          <select name="item"><option value="">Ajouter un objet</option>${options}</select>
+          <input name="qty" type="number" min="1" value="1">
+          <button>Ajouter</button>
+        </form>`
+      : `<p class="empty">Tous les objets sont dans le sac.</p>`
   layout(model.name, `${lines}${form}<a class="back" href="#/modeles">Retour</a>`)
 }
 
@@ -176,8 +184,10 @@ app.addEventListener("submit", (event) => {
     location.hash = `#/modeles/${result.model.id}`
   }
   if (action === "line") {
+    const item = data.get("item")
+    if (!item) return
     const page = route()
-    persist(setModelLine(db, page.id, data.get("item"), data.get("qty")).db)
+    persist(setModelLine(db, page.id, item, data.get("qty")).db)
   }
   if (action === "bag") {
     const result = createBag(db, data.get("name"), data.get("model"))
@@ -199,9 +209,10 @@ app.addEventListener("click", (event) => {
 
 app.addEventListener("change", (event) => {
   const input = event.target
-  if (!(input instanceof HTMLInputElement) || input.dataset.action !== "qty") return
+  if (!(input instanceof HTMLInputElement)) return
   const page = route()
-  persist(setModelLine(db, page.id, input.dataset.id, input.value).db)
+  if (input.dataset.action === "qty") persist(setModelLine(db, page.id, input.dataset.id, input.value).db)
+  if (input.dataset.action === "bag-qty") persist(setBagQty(db, page.id, input.dataset.id, input.value).db)
 })
 
 window.addEventListener("hashchange", draw)

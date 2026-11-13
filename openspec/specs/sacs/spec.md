@@ -13,6 +13,10 @@ Un modèle de sac DOIT contenir des lignes. Une ligne est un objet et un nombre.
 - **WHEN** on ajoute Masque avec le nombre 1 au modèle Plongée
 - **THEN** la ligne est enregistrée et aucune case à cocher n'est proposée
 
+#### Scenario: Objet déjà ajouté
+- **WHEN** Masque est déjà dans le modèle
+- **THEN** Masque n'est plus proposé pour un nouvel ajout
+
 ### Requirement: Ouvrir un enfant
 Un enfant DOIT avoir un nom et un modèle. En l'ouvrant, on DOIT voir toutes les lignes héritées, avec leur nombre. Chaque ligne DOIT pouvoir être cochée et décochée.
 

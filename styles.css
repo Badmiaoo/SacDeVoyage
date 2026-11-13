@@ -47,3 +47,6 @@ nav {
   background: #1c1915;
 }
 nav a { color: white; text-align: center; text-decoration: none; padding: 1rem 0.2rem; }
+
+input.qty { flex: 0 0 4.5rem; }
+.check { flex: 1; }
