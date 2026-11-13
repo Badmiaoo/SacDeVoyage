@@ -2,9 +2,11 @@ import { agendaEvents } from "./store.js"
 import { planCalendar, applyPlan } from "./agenda.js"
 
 export const CALENDAR_NAME = "Sac de voyage"
-export const googleClientId = ""
+export const googleClientId = "941689566479-ltnmiihth5sfld922e61rscp5b74k1fv.apps.googleusercontent.com"
+export const redirectUri = "https://badmiaoo.github.io/SacDeVoyage/"
 const API = "https://www.googleapis.com/calendar/v3"
 const SESSION = "sac-google-session"
+const PENDING = "sac-google-pending"
 
 export function calendarBody(event) {
   return {
@@ -125,4 +127,68 @@ export function loadSession(storage) {
 
 export function saveSession(session, storage) {
   storage.setItem(SESSION, JSON.stringify(session))
+}
+
+function base64url(bytes) {
+  let binary = ""
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")
+}
+
+export async function beginAuth({ clientId, redirect, storage, randomState }) {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  const verifier = base64url(bytes)
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
+  const challenge = base64url(new Uint8Array(digest))
+  const state = randomState()
+  storage.setItem(PENDING, JSON.stringify({ verifier, state }))
+  return authUrl({ clientId, redirect, challenge, state })
+}
+
+export async function completeAuth({ href, clientId, redirect, storage, fetch }) {
+  const url = new URL(href)
+  const code = url.searchParams.get("code")
+  if (!code) {
+    if (!url.searchParams.get("error")) return null
+    url.search = ""
+    return { href: `${url.pathname}${url.hash}`, error: true }
+  }
+  const pending = JSON.parse(storage.getItem(PENDING) || "null")
+  if (!pending || pending.state !== url.searchParams.get("state")) throw new Error("Retour Google refusé.")
+  const tokens = await exchangeCode({ fetch, clientId, code, verifier: pending.verifier, redirect })
+  if (!tokens.accessToken) throw new Error("Google n'a pas donné de jeton.")
+  const session = {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: Date.now() + tokens.expiresIn * 1000,
+  }
+  saveSession(session, storage)
+  storage.removeItem(PENDING)
+  url.search = ""
+  return { session, href: `${url.pathname}${url.hash}` }
+}
+
+export async function refreshSession({ fetch, clientId, storage }) {
+  const session = loadSession(storage)
+  if (!session?.refreshToken) return session
+  if (session.expiresAt > Date.now() + 60_000) return session
+  const body = new URLSearchParams({
+    client_id: clientId,
+    refresh_token: session.refreshToken,
+    grant_type: "refresh_token",
+  })
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  })
+  const json = await response.json()
+  if (!json.access_token) throw new Error("Google n'a pas renouvelé le jeton.")
+  const next = {
+    accessToken: json.access_token,
+    refreshToken: json.refresh_token || session.refreshToken,
+    expiresAt: Date.now() + json.expires_in * 1000,
+  }
+  saveSession(next, storage)
+  return next
 }

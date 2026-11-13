@@ -5,4 +5,4 @@
 - [x] Allonger puis retirer via le plan déjà testé
 - [x] Appels Google paginés, avec la propriété privée
 - [x] Connexion sans secret
-- [ ] Poser l'identifiant client pour afficher le bouton
+- [x] Poser l'identifiant client et le bouton Relier

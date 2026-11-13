@@ -39,7 +39,7 @@ import {
   missingChecks,
   attention,
 } from "./store.js"
-import { googleApi, googleClientId, loadSession, syncDedicated } from "./google.js"
+import { beginAuth, completeAuth, googleApi, googleClientId, loadSession, redirectUri, refreshSession, syncDedicated } from "./google.js"
 
 const app = document.querySelector("#app")
 let departureKind = "once"
@@ -64,13 +64,25 @@ function persist(next) {
   void pushAgenda()
 }
 
+let agendaNote = ""
+
 async function pushAgenda() {
-  const session = loadSession(localStorage)
-  if (!session?.accessToken || !googleClientId) return
+  if (!googleClientId) return
   try {
+    const session = await refreshSession({
+      fetch: globalThis.fetch.bind(globalThis),
+      clientId: googleClientId,
+      storage: localStorage,
+    })
+    if (!session?.accessToken) return
     await syncDedicated(db, todayIso(), googleApi({ fetch: globalThis.fetch.bind(globalThis), token: session.accessToken }))
+    if (agendaNote) {
+      agendaNote = ""
+      draw()
+    }
   } catch {
-    // Le sac reste enregistré. L'agenda réessaiera au prochain geste.
+    agendaNote = "L'agenda n'a pas été mis à jour. Réessaie."
+    draw()
   }
 }
 
@@ -303,7 +315,12 @@ function drawDepartures() {
   const agenda = agendaEvents(db, todayIso())
     .map((event) => `<div class="row"><strong>${esc(event.title)}</strong><span>depuis ${esc(event.since)}</span></div>`)
     .join("")
-  layout("Départs", `${trips || `<p class="empty">Aucun départ.</p>`}<h2>Dans l'agenda</h2>${agenda || `<p class="empty">Rien en attente.</p>`}<h2>Nouveau</h2>${create}`)
+  const linked = Boolean(loadSession(localStorage)?.accessToken)
+  const link = linked
+    ? `<p class="empty">Agenda Google relié.</p>`
+    : `<button data-action="connect-google">Relier l'agenda Google</button>`
+  const note = agendaNote ? `<p class="alert">${esc(agendaNote)}</p>` : ""
+  layout("Départs", `${trips || `<p class="empty">Aucun départ.</p>`}<h2>Dans l'agenda</h2>${note}${agenda || `<p class="empty">Rien en attente.</p>`}${link}<h2>Nouveau</h2>${create}`)
 }
 
 function drawDepartureModel(id) {
@@ -469,6 +486,15 @@ app.addEventListener("click", (event) => {
     persist(deleteDepartureModel(db, target.dataset.id).db)
   }
   if (action === "delete-action") persist(removeDepartureAction(db, page.id, target.dataset.id).db)
+  if (action === "connect-google") {
+    beginAuth({
+      clientId: googleClientId,
+      redirect: redirectUri,
+      storage: localStorage,
+      randomState: () => crypto.randomUUID(),
+    }).then((url) => location.assign(url))
+    return
+  }
 })
 
 app.addEventListener("change", (event) => {
@@ -495,4 +521,19 @@ app.addEventListener("change", (event) => {
 })
 
 window.addEventListener("hashchange", draw)
-draw()
+
+completeAuth({
+  href: location.href,
+  clientId: googleClientId,
+  redirect: redirectUri,
+  storage: localStorage,
+  fetch: globalThis.fetch.bind(globalThis),
+}).then((back) => {
+  if (back?.error) agendaNote = "Connexion annulée."
+  if (back?.href) history.replaceState(null, "", back.href)
+  draw()
+  void pushAgenda()
+}).catch(() => {
+  agendaNote = "Google n'a pas relié l'agenda. Réessaie."
+  draw()
+})
