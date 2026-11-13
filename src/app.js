@@ -39,7 +39,7 @@ import {
   missingChecks,
   attention,
 } from "./store.js"
-import { beginAuth, completeAuth, googleApi, googleClientId, loadSession, redirectUri, refreshSession, syncDedicated } from "./google.js"
+import { dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 
 const app = document.querySelector("#app")
 let departureKind = "once"
@@ -315,7 +315,7 @@ function drawDepartures() {
   const agenda = agendaEvents(db, todayIso())
     .map((event) => `<div class="row"><strong>${esc(event.title)}</strong><span>depuis ${esc(event.since)}</span></div>`)
     .join("")
-  const linked = Boolean(loadSession(localStorage)?.accessToken)
+  const linked = sessionUsable(loadSession(localStorage))
   const link = linked
     ? `<p class="empty">Agenda Google relié.</p>`
     : `<button data-action="connect-google">Relier l'agenda Google</button>`
@@ -487,12 +487,27 @@ app.addEventListener("click", (event) => {
   }
   if (action === "delete-action") persist(removeDepartureAction(db, page.id, target.dataset.id).db)
   if (action === "connect-google") {
-    beginAuth({
+    const google = globalThis.google
+    if (!google?.accounts?.oauth2) {
+      agendaNote = "Google ne s'est pas chargé. Recharge la page."
+      draw()
+      return
+    }
+    openGoogleConsent(google, {
       clientId: googleClientId,
-      redirect: redirectUri,
-      storage: localStorage,
-      randomState: () => crypto.randomUUID(),
-    }).then((url) => location.assign(url))
+      scope: "https://www.googleapis.com/auth/calendar",
+      prompt: "consent",
+      onSession: (session) => {
+        saveSession(session, localStorage)
+        agendaNote = ""
+        draw()
+        void pushAgenda()
+      },
+      onError: (message) => {
+        agendaNote = message === "access_denied" ? "Connexion annulée." : "Google n'a pas relié l'agenda. Réessaie."
+        draw()
+      },
+    })
     return
   }
 })
@@ -522,18 +537,7 @@ app.addEventListener("change", (event) => {
 
 window.addEventListener("hashchange", draw)
 
-completeAuth({
-  href: location.href,
-  clientId: googleClientId,
-  redirect: redirectUri,
-  storage: localStorage,
-  fetch: globalThis.fetch.bind(globalThis),
-}).then((back) => {
-  if (back?.error) agendaNote = "Connexion annulée."
-  if (back?.href) history.replaceState(null, "", back.href)
-  draw()
-  void pushAgenda()
-}).catch(() => {
-  agendaNote = "Google n'a pas relié l'agenda. Réessaie."
-  draw()
-})
+const clean = dropAuthQuery(location.href)
+if (clean) history.replaceState(null, "", clean)
+draw()
+void pushAgenda()

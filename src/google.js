@@ -119,6 +119,38 @@ export async function exchangeCode({ fetch, clientId, code, verifier, redirect }
   return { accessToken: json.access_token, refreshToken: json.refresh_token, expiresIn: json.expires_in }
 }
 
+export function sessionUsable(session, now = Date.now()) {
+  if (!session?.accessToken) return false
+  if (session.expiresAt == null) return true
+  return session.expiresAt > now + 60_000
+}
+
+export function dropAuthQuery(href) {
+  const url = new URL(href)
+  if (!url.searchParams.has("code") && !url.searchParams.has("error")) return null
+  url.search = ""
+  return `${url.pathname}${url.hash}`
+}
+
+export function openGoogleConsent(google, { clientId, scope, prompt, onSession, onError }) {
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope,
+    callback: (response) => {
+      if (response.error || !response.access_token) {
+        onError(response.error || "Google n'a pas donné de jeton.")
+        return
+      }
+      onSession({
+        accessToken: response.access_token,
+        expiresAt: Date.now() + Number(response.expires_in || 3600) * 1000,
+      })
+    },
+    error_callback: () => onError("Connexion annulée."),
+  })
+  client.requestAccessToken({ prompt })
+}
+
 export function loadSession(storage) {
   const raw = storage.getItem(SESSION)
   if (!raw) return null
@@ -170,8 +202,9 @@ export async function completeAuth({ href, clientId, redirect, storage, fetch })
 
 export async function refreshSession({ fetch, clientId, storage }) {
   const session = loadSession(storage)
-  if (!session?.refreshToken) return session
-  if (session.expiresAt > Date.now() + 60_000) return session
+  if (!session?.accessToken) return null
+  if (sessionUsable(session)) return session
+  if (!session.refreshToken) return null
   const body = new URLSearchParams({
     client_id: clientId,
     refresh_token: session.refreshToken,

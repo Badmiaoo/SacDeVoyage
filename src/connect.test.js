@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { googleClientId, redirectUri, beginAuth, completeAuth, refreshSession } from "./google.js"
+import { googleClientId, redirectUri, beginAuth, completeAuth, refreshSession, sessionUsable, openGoogleConsent, dropAuthQuery } from "./google.js"
 
 function memory() {
   const data = new Map()
@@ -83,4 +83,50 @@ test("un jeton expiré est renouvelé sans secret", async () => {
   assert.equal(session.refreshToken, "r")
   assert.equal(sent.includes("refresh_token=r"), true)
   assert.equal(sent.includes("client_secret"), false)
+})
+
+test("une session expirée sans jeton de suite n'est plus utilisable", () => {
+  assert.equal(sessionUsable({ accessToken: "a", expiresAt: Date.now() + 3_600_000 }), true)
+  assert.equal(sessionUsable({ accessToken: "a", expiresAt: 0 }), false)
+  assert.equal(sessionUsable(null), false)
+})
+
+test("le bouton ouvre Google sans secret", () => {
+  const calls = []
+  let session = null
+  let error = ""
+  const google = {
+    accounts: {
+      oauth2: {
+        initTokenClient: (config) => {
+          calls.push(config)
+          return { requestAccessToken: (options) => calls.push(options) }
+        },
+      },
+    },
+  }
+  openGoogleConsent(google, {
+    clientId: googleClientId,
+    scope: "https://www.googleapis.com/auth/calendar",
+    prompt: "consent",
+    onSession: (value) => { session = value },
+    onError: (message) => { error = message },
+  })
+  assert.equal(calls[0].client_id, googleClientId)
+  assert.equal(calls[0].scope, "https://www.googleapis.com/auth/calendar")
+  assert.equal(JSON.stringify(calls).includes("client_secret"), false)
+  assert.deepEqual(calls[1], { prompt: "consent" })
+  calls[0].callback({ access_token: "jeton", expires_in: 3600 })
+  assert.equal(session.accessToken, "jeton")
+  assert.equal(session.expiresAt > Date.now(), true)
+  calls[0].callback({ error: "access_denied" })
+  assert.equal(error, "access_denied")
+})
+
+test("un vieux retour Google est retiré de l'adresse", () => {
+  assert.equal(
+    dropAuthQuery("https://badmiaoo.github.io/SacDeVoyage/?code=abc&state=xyz#/departs"),
+    "/SacDeVoyage/#/departs",
+  )
+  assert.equal(dropAuthQuery("https://badmiaoo.github.io/SacDeVoyage/#/departs"), null)
 })
