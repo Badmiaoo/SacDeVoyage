@@ -25,6 +25,11 @@ import {
   actionDate,
   applyOutings,
   todayIso,
+  deleteBag,
+  deleteBagModel,
+  deleteDeparture,
+  deleteDepartureModel,
+  removeDepartureAction,
 } from "./store.js"
 
 const app = document.querySelector("#app")
@@ -133,7 +138,7 @@ function drawBag(id) {
       ? `<button data-action="filled" data-id="${bag.id}">C'est rempli</button>`
       : ""
   const note = bag.status === "emptying" ? `<p class="empty">Seulement ce qui doit sortir.</p>` : ""
-  layout(bag.name, `<p class="empty">${esc(statusLabel[bag.status])}</p>${note}${lines || `<p class="empty">Rien à montrer.</p>`}${action}<a class="back" href="#/">Retour</a>`)
+  layout(bag.name, `<p class="empty">${esc(statusLabel[bag.status])}</p>${note}${lines || `<p class="empty">Rien à montrer.</p>`}${action}<button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
 }
 
 function drawModels() {
@@ -178,7 +183,7 @@ function drawModel(id) {
           <button>Ajouter</button>
         </form>`
       : `<p class="empty">Tous les objets sont dans le sac.</p>`
-  layout(model.name, `<select data-action="after-use">${choices}</select>${lines}${form}<a class="back" href="#/modeles">Retour</a>`)
+  layout(model.name, `<p class="empty">Ce modèle décide du contenu. On ne coche pas ici.</p><select data-action="after-use">${choices}</select>${lines}${form}<button class="quiet" data-action="delete-model" data-id="${model.id}">Supprimer ce modèle</button><a class="back" href="#/modeles">Retour</a>`)
 }
 
 function drawItems() {
@@ -199,39 +204,51 @@ function drawItems() {
 }
 
 function drawDepartures() {
-  const models = db.departureModels
-    .map((model) => `<a class="row" href="#/dmodele/${model.id}"><strong>${esc(model.name)}</strong><span>${model.actions.length} actions</span></a>`)
-    .join("")
   const trips = db.departures
-    .map((departure) => `<a class="row" href="#/departs/${departure.id}"><strong>${esc(departure.name)}</strong></a>`)
+    .map((departure) => {
+      const when = departure.kind === "once" ? `${departure.start} → ${departure.end}` : `Chaque ${weekdays[departure.weekday]}`
+      return `<div class="line">
+        <a class="row" href="#/departs/${departure.id}"><strong>${esc(departure.name)}</strong><span>${esc(when)}</span></a>
+        <button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer</button>
+      </div>`
+    })
+    .join("")
+  const models = db.departureModels
+    .map((model) => `<a class="row" href="#/dmodele/${model.id}"><strong>${esc(model.name)}</strong><span>Modifier</span></a>`)
     .join("")
   const options = db.departureModels.map((model) => `<option value="${model.id}">${esc(model.name)}</option>`).join("")
   const days = weekdays.map((label, index) => `<option value="${index}">${label}</option>`).join("")
-  const form = db.departureModels.length
+  const create = db.departureModels.length
     ? `<form data-action="departure">
-        <input name="name" placeholder="Nom du départ" required>
-        <select name="model">${options}</select>
-        <select name="kind">
-          <option value="once">Une fois</option>
-          <option value="recurring">Chaque semaine</option>
-        </select>
-        <input name="start" type="date">
-        <input name="end" type="date">
-        <select name="weekday"><option value="">Jour</option>${days}</select>
+        <label>Modèle<select name="model">${options}</select></label>
+        <label>Nom<input name="name" placeholder="CSE juin" required></label>
+        <label>Quand
+          <select name="kind">
+            <option value="once">Une fois, avec un début et une fin</option>
+            <option value="recurring">Chaque semaine</option>
+          </select>
+        </label>
+        <label data-once>Début<input name="start" type="date" required></label>
+        <label data-once>Fin<input name="end" type="date" required></label>
+        <label data-week hidden>Jour<select name="weekday">${days}</select></label>
         <button>Créer le départ</button>
       </form>`
-    : `<p class="empty">Crée d'abord un modèle de départ.</p>`
+    : ""
   layout(
     "Départs",
-    `<p class="empty">Modèles</p>${models || `<p class="empty">Aucun.</p>`}
-    <form data-action="dmodel"><input name="name" placeholder="Nom du modèle de départ" required><button>Créer le modèle</button></form>
-    <p class="empty">Départs</p>${trips || `<p class="empty">Aucun.</p>`}${form}`,
+    `<p class="empty">Un modèle dit quels sacs et quelles actions. Un départ, c'est une fois : des dates, ou un jour de la semaine.</p>
+    <h2>1. Le modèle</h2>
+    ${models || `<p class="empty">Aucun modèle.</p>`}
+    <form data-action="dmodel"><input name="name" placeholder="Nom du modèle, par exemple Avec avion" required><button>Créer le modèle</button></form>
+    <h2>2. Le départ</h2>
+    ${trips || `<p class="empty">Aucun départ.</p>`}
+    ${create}`,
   )
 }
 
 function drawDepartureModel(id) {
   const model = db.departureModels.find((entry) => entry.id === id)
-  if (!model) return layout("Départ", `<p class="empty">Ce modèle n'existe pas.</p>`)
+  if (!model) return layout("Modèle", `<p class="empty">Ce modèle n'existe pas.</p>`)
   const bags = db.bags
     .map((bag) => {
       const on = model.bagIds.includes(bag.id) ? "on" : ""
@@ -239,17 +256,25 @@ function drawDepartureModel(id) {
     })
     .join("")
   const actions = model.actions
-    .map((action) => `<div class="row"><strong>${esc(action.label)}</strong><span>J${action.offsetDays}</span></div>`)
+    .map((action) => `<div class="line">
+      <div class="row"><strong>${esc(action.label)}</strong><span>J${action.offsetDays}</span></div>
+      <button class="quiet" data-action="delete-action" data-id="${action.id}">Retirer</button>
+    </div>`)
     .join("")
   layout(
     model.name,
-    `${bags || `<p class="empty">Crée d'abord un sac.</p>`}
+    `<p class="empty">Pas de date ici. Choisis les sacs, puis les actions à faire avant le départ.</p>
+    <h2>Sacs</h2>
+    ${bags || `<p class="empty">Crée d'abord un sac.</p>`}
+    <h2>Actions</h2>
+    <p class="empty">30 veut dire J-30, le jour du début.</p>
     ${actions}
     <form data-action="action">
-      <input name="label" placeholder="Action" required>
-      <input name="days" type="number" min="0" value="1" class="qty">
-      <button>Ajouter le J-</button>
+      <input name="label" placeholder="Vérifier les papiers" required>
+      <input name="days" type="number" min="0" value="30" class="qty">
+      <button>Ajouter</button>
     </form>
+    <button class="quiet" data-action="delete-dmodel" data-id="${model.id}">Supprimer ce modèle</button>
     <a class="back" href="#/departs">Retour</a>`,
   )
 }
@@ -271,7 +296,7 @@ function drawDeparture(id) {
   const bags = (model?.bagIds || [])
     .map((bagId) => `<a class="row" href="#/sac/${bagId}"><strong>${esc(bagName(db, bagId))}</strong></a>`)
     .join("")
-  layout(departure.name, `<p class="empty">${esc(when)}</p>${actions}${bags || `<p class="empty">Aucun sac.</p>`}<a class="back" href="#/departs">Retour</a>`)
+  layout(departure.name, `<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}<button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
 }
 
 app.addEventListener("submit", (event) => {
@@ -353,6 +378,23 @@ app.addEventListener("click", (event) => {
   if (action === "filled") persist(markFilled(db, target.dataset.id).db)
   if (action === "trip-bag") persist(toggleDepartureBag(db, page.id, target.dataset.id).db)
   if (action === "trip-check") persist(toggleDepartureAction(db, page.id, target.dataset.id).db)
+  if (action === "delete-bag") {
+    location.hash = "#/"
+    persist(deleteBag(db, target.dataset.id).db)
+  }
+  if (action === "delete-model") {
+    location.hash = "#/modeles"
+    persist(deleteBagModel(db, target.dataset.id).db)
+  }
+  if (action === "delete-departure") {
+    location.hash = "#/departs"
+    persist(deleteDeparture(db, target.dataset.id).db)
+  }
+  if (action === "delete-dmodel") {
+    location.hash = "#/departs"
+    persist(deleteDepartureModel(db, target.dataset.id).db)
+  }
+  if (action === "delete-action") persist(removeDepartureAction(db, page.id, target.dataset.id).db)
 })
 
 app.addEventListener("change", (event) => {
@@ -360,6 +402,11 @@ app.addEventListener("change", (event) => {
   const page = route()
   if (input instanceof HTMLSelectElement && input.dataset.action === "after-use") {
     persist(setAfterUse(db, page.id, input.value).db)
+  }
+  if (input instanceof HTMLSelectElement && input.name === "kind" && input.form) {
+    const once = input.value === "once"
+    for (const node of input.form.querySelectorAll("[data-once]")) node.hidden = !once
+    for (const node of input.form.querySelectorAll("[data-week]")) node.hidden = once
   }
   if (!(input instanceof HTMLInputElement)) return
   if (input.dataset.action === "qty") persist(setModelLine(db, page.id, input.dataset.id, input.value).db)

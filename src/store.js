@@ -374,6 +374,62 @@ function outingDate(departure, today) {
   return null
 }
 
+
+export function deleteBag(db, bagId) {
+  return {
+    db: {
+      ...db,
+      bags: db.bags.filter((bag) => bag.id !== bagId),
+      departureModels: db.departureModels.map((model) => ({
+        ...model,
+        bagIds: model.bagIds.filter((id) => id !== bagId),
+      })),
+    },
+  }
+}
+
+export function deleteBagModel(db, modelId) {
+  const gone = new Set(db.bags.filter((bag) => bag.modelId === modelId).map((bag) => bag.id))
+  return {
+    db: {
+      ...db,
+      bagModels: db.bagModels.filter((model) => model.id !== modelId),
+      bags: db.bags.filter((bag) => bag.modelId !== modelId),
+      departureModels: db.departureModels.map((model) => ({
+        ...model,
+        bagIds: model.bagIds.filter((id) => !gone.has(id)),
+      })),
+    },
+  }
+}
+
+export function deleteDeparture(db, departureId) {
+  return { db: { ...db, departures: db.departures.filter((entry) => entry.id !== departureId) } }
+}
+
+export function deleteDepartureModel(db, modelId) {
+  return {
+    db: {
+      ...db,
+      departureModels: db.departureModels.filter((model) => model.id !== modelId),
+      departures: db.departures.filter((entry) => entry.modelId !== modelId),
+    },
+  }
+}
+
+export function removeDepartureAction(db, modelId, actionId) {
+  return {
+    db: {
+      ...db,
+      departureModels: db.departureModels.map((model) =>
+        model.id === modelId
+          ? { ...model, actions: model.actions.filter((action) => action.id !== actionId) }
+          : model,
+      ),
+    },
+  }
+}
+
 export function applyOutings(db, today) {
   let bags = db.bags
   const departures = db.departures.map((departure) => {
