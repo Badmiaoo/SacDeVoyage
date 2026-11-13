@@ -31,6 +31,10 @@ import {
   deleteBagModel,
   deleteDeparture,
   deleteDepartureModel,
+  renameBag,
+  renameBagModel,
+  renameDeparture,
+  renameDepartureModel,
   removeDepartureAction,
   departureFields,
   departureBagIds,
@@ -38,7 +42,7 @@ import {
   agendaEvents,
   missingChecks,
   attention,
-} from "./store.js?v=14"
+} from "./store.js?v=16"
 import { dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 import { formatDay, formatLine } from "./text.js"
 
@@ -195,7 +199,7 @@ function drawBag(id) {
         <input name="qty" type="number" min="1" value="1">
         <button>Ajouter</button>
       </form>`
-  layout(bag.name, `<p class="empty">${esc(shownStatus(bag))}</p>${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${extra}${action}<button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
+  layout(bag.name, `<p class="empty">${esc(shownStatus(bag))}</p>${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${extra}${action}<form data-action="rename-bag" data-id="${bag.id}"><input name="name" value="${esc(bag.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
 }
 
 function daysBefore(offset) {
@@ -256,7 +260,7 @@ function drawModel(id) {
           <button>Ajouter</button>
         </form>`
       : `<p class="empty">Tous les objets sont dans le sac.</p>`
-  layout(model.name, `<p class="empty">Ce modèle décide du contenu. On ne coche pas ici.</p><select data-action="after-use">${choices}</select>${lines}${form}<button class="quiet" data-action="delete-model" data-id="${model.id}">Supprimer ce modèle</button><a class="back" href="#/modeles">Retour</a>`)
+  layout(model.name, `<p class="empty">Ce modèle décide du contenu. On ne coche pas ici.</p><select data-action="after-use">${choices}</select>${lines}${form}<form data-action="rename-model" data-id="${model.id}"><input name="name" value="${esc(model.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-model" data-id="${model.id}">Supprimer ce modèle</button><a class="back" href="#/modeles">Retour</a>`)
 }
 
 function drawItems() {
@@ -352,6 +356,7 @@ function drawDepartureModel(id) {
       <p class="empty">0, le jour même. 1, la veille. 30, trente jours avant.</p>
       <button>Ajouter</button>
     </form>
+    <form data-action="rename-dmodel" data-id="${model.id}"><input name="name" value="${esc(model.name)}" required><button>Renommer</button></form>
     <button class="quiet" data-action="delete-dmodel" data-id="${model.id}">Supprimer ce modèle</button>
     <a class="back" href="#/modeles">Retour</a>`,
   )
@@ -380,7 +385,7 @@ function drawDeparture(id) {
       return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${esc(state)}${stuff ? ` · ${stuff}` : ""}</span></a>`
     })
     .join("")
-  layout(departure.name, `<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}<button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
+  layout(departure.name, `<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}<form data-action="rename-departure" data-id="${departure.id}"><input name="name" value="${esc(departure.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
 }
 
 app.addEventListener("submit", (event) => {
@@ -397,6 +402,17 @@ app.addEventListener("submit", (event) => {
   }
   if (action === "rename") {
     const result = renameItem(db, form.dataset.id, data.get("name"))
+    if (result.error) return alert(result.error)
+    persist(result.db)
+  }
+  if (action === "rename-bag" || action === "rename-model" || action === "rename-departure" || action === "rename-dmodel") {
+    const rename = {
+      "rename-bag": renameBag,
+      "rename-model": renameBagModel,
+      "rename-departure": renameDeparture,
+      "rename-dmodel": renameDepartureModel,
+    }[action]
+    const result = rename(db, form.dataset.id, data.get("name"))
     if (result.error) return alert(result.error)
     persist(result.db)
   }

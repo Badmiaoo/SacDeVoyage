@@ -1,4 +1,4 @@
-import { agendaEvents } from "./store.js?v=14"
+import { agendaEvents } from "./store.js?v=16"
 import { planCalendar, applyPlan } from "./agenda.js"
 
 export const CALENDAR_NAME = "Sac de voyage"

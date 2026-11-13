@@ -1,4 +1,4 @@
-import { addDays } from "./store.js?v=14"
+import { addDays } from "./store.js?v=16"
 
 export function planCalendar(desired, existing, today) {
   const end = addDays(today, 1)

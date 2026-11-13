@@ -195,6 +195,40 @@ export function createBag(db, name, modelId) {
   return { db: { ...db, bags: [...db.bags, bag] }, bag }
 }
 
+function renameNamed(list, id, name) {
+  const trimmed = String(name || "").trim()
+  if (!trimmed) return { error: "Le nom est vide." }
+  if (!list.some((entry) => entry.id === id)) return { error: "Introuvable." }
+  if (list.some((entry) => entry.id !== id && sameName(entry.name, trimmed))) {
+    return { error: "Ce nom existe déjà." }
+  }
+  return { list: list.map((entry) => (entry.id === id ? { ...entry, name: trimmed } : entry)) }
+}
+
+export function renameBag(db, bagId, name) {
+  const result = renameNamed(db.bags, bagId, name)
+  if (result.error) return { db, error: result.error }
+  return { db: { ...db, bags: result.list } }
+}
+
+export function renameBagModel(db, modelId, name) {
+  const result = renameNamed(db.bagModels, modelId, name)
+  if (result.error) return { db, error: result.error }
+  return { db: { ...db, bagModels: result.list } }
+}
+
+export function renameDeparture(db, departureId, name) {
+  const result = renameNamed(db.departures, departureId, name)
+  if (result.error) return { db, error: result.error }
+  return { db: { ...db, departures: result.list } }
+}
+
+export function renameDepartureModel(db, modelId, name) {
+  const result = renameNamed(db.departureModels, modelId, name)
+  if (result.error) return { db, error: result.error }
+  return { db: { ...db, departureModels: result.list } }
+}
+
 export function addBagLine(db, bagId, itemId, qty) {
   if (!db.items.some((item) => item.id === itemId)) return { db, error: "L'objet n'existe pas." }
   const count = Math.max(1, Number(qty) || 1)
