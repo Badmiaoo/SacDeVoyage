@@ -1,4 +1,4 @@
-import { agendaEvents } from "./store.js?v=18"
+import { agendaEvents } from "./store.js?v=20"
 import { planCalendar, applyPlan } from "./agenda.js"
 
 export const CALENDAR_NAME = "Sac de voyage"
@@ -37,6 +37,7 @@ export async function syncDedicated(db, today, api) {
   const calendars = await api.listCalendars()
   let calendar = calendars.find((entry) => entry.summary === CALENDAR_NAME)
   if (!calendar) calendar = await api.createCalendar(CALENDAR_NAME)
+  if (calendar?.id && api.selectCalendar) await api.selectCalendar(calendar.id)
   const existing = (await api.listEvents(calendar.id)).map(readEvent).filter(Boolean)
   const plan = planCalendar(agendaEvents(db, today), existing, today)
   await applyPlan(plan, {
@@ -70,7 +71,16 @@ export function googleApi({ fetch, token }) {
     listCalendars: () => getAll(`${API}/users/me/calendarList`),
     async createCalendar(name) {
       const response = await fetch(`${API}/calendars`, { method: "POST", headers, body: JSON.stringify({ summary: name }) })
-      return response.json()
+      const calendar = await response.json()
+      if (calendar.id) await this.selectCalendar(calendar.id)
+      return calendar
+    },
+    async selectCalendar(id) {
+      await fetch(`${API}/users/me/calendarList/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ selected: true }),
+      })
     },
     listEvents: (id) => getAll(`${events(id)}?privateExtendedProperty=app%3Dsac-de-voyage`),
     async insertEvent(id, body) {
@@ -85,6 +95,14 @@ export function googleApi({ fetch, token }) {
       await fetch(`${events(id)}/${encodeURIComponent(eventId)}`, { method: "DELETE", headers })
     },
   }
+}
+
+export async function clearDedicated(api) {
+  const calendars = await api.listCalendars()
+  const calendar = calendars.find((entry) => entry.summary === CALENDAR_NAME)
+  if (!calendar) return
+  const existing = (await api.listEvents(calendar.id)).map(readEvent).filter(Boolean)
+  for (const event of existing) await api.deleteEvent(calendar.id, event.id)
 }
 
 export function authUrl({ clientId, redirect, challenge, state }) {

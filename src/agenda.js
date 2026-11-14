@@ -1,9 +1,14 @@
-import { addDays } from "./store.js?v=18"
+import { addDays } from "./store.js?v=20"
 
 export function planCalendar(desired, existing, today) {
   const end = addDays(today, 1)
   const ours = existing.filter((event) => event.key)
-  const byKey = new Map(ours.map((event) => [event.key, event]))
+  const byKey = new Map()
+  const extras = []
+  for (const event of ours) {
+    if (byKey.has(event.key)) extras.push(event)
+    else byKey.set(event.key, event)
+  }
   const creates = []
   const updates = []
   const wanted = new Set()
@@ -25,7 +30,7 @@ export function planCalendar(desired, existing, today) {
       updates.push({ ...next, id: found.id })
     }
   }
-  const deletes = ours.filter((event) => !wanted.has(event.key))
+  const deletes = [...ours.filter((event) => !wanted.has(event.key) && !extras.includes(event)), ...extras]
   return { creates, updates, deletes }
 }
 

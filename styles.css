@@ -38,7 +38,7 @@ input, select {
   font: inherit;
 }
 button { background: #1f6b4a; color: white; cursor: pointer; }
-.empty { color: #645d53; }
+.empty { color: #3d3832; }
 .alert { background: #f4e4c8; border: 2px solid #8a4b08; padding: 0.8rem 1rem; font-weight: 700; }
 nav {
   position: fixed;

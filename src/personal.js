@@ -1,6 +1,7 @@
-import { emptyDb, load, save, createItem, createBagModel, setAfterUse, setModelLine, createBag, createDepartureModel, toggleDepartureBag } from "./store.js"
+import { emptyDb, load, save, createItem, createBagModel, setAfterUse, setModelLine, createBag, createDepartureModel, toggleDepartureBag, addDepartureAction, removeModelLine } from "./store.js"
 
-export const PERSONAL_SEED = "listes-perso-1"
+export const PERSONAL_SEED = "listes-perso-2"
+const PREVIOUS_SEED = "listes-perso-1"
 
 const maison = [
   "Vider frigo / boite a pain / placard / fruit",
@@ -52,9 +53,6 @@ const voyage = [
   "Adaptateur jack-bluetooth (ou jack 3.5 2.5)",
   "Power bank steamdeck",
   "Bas de contention",
-  "Photocopie passeport",
-  "Inscription fil d'Ariane",
-  "Prévenir la banque",
   "Sac de plage",
   "Mini ventilateur",
   "Anti-friction",
@@ -107,10 +105,11 @@ function makeBag(db, name, afterUse, labels) {
   return { db: bag.db, bagId: bag.bag.id }
 }
 
-function makeTrip(db, name, bagIds) {
+function makeTrip(db, name, bagIds, actions = []) {
   const model = createDepartureModel(db, name)
   let next = model.db
   for (const bagId of bagIds) next = toggleDepartureBag(next, model.model.id, bagId).db
+  for (const action of actions) next = addDepartureAction(next, model.model.id, action.label, action.days).db
   return next
 }
 
@@ -122,17 +121,55 @@ export function personalDb() {
   const cat = makeBag(trip.db, "Absence chat", "all", chat)
   const away = makeBag(cat.db, "Shaé part", "all", shae)
   db = away.db
-  db = makeTrip(db, "Départ maison", [house.bagId])
-  db = makeTrip(db, "Voyage", [kit.bagId, trip.bagId])
-  db = makeTrip(db, "Absence chat", [cat.bagId])
-  db = makeTrip(db, "Shaé part", [away.bagId])
+  db = makeTrip(db, "Départ maison", [house.bagId], maison.map((label) => ({ label, days: 0 })))
+  db = makeTrip(db, "Voyage", [kit.bagId, trip.bagId], [
+    { label: "Prévenir la banque", days: 7 },
+    { label: "Inscription fil d'Ariane", days: 7 },
+    { label: "Photocopie passeport", days: 1 },
+  ])
+  db = makeTrip(db, "Absence chat", [cat.bagId], chat.map((label) => ({ label, days: 0 })))
+  db = makeTrip(db, "Shaé part", [away.bagId], shae.map((label) => ({ label, days: 0 })))
   return { ...db, seed: PERSONAL_SEED }
+}
+
+export function migratePersonal(db) {
+  if (db.seed !== PREVIOUS_SEED) return db
+  let next = db
+  const voyage = next.bagModels.find((model) => model.name === "Voyage")
+  const drop = ["Prévenir la banque", "Inscription fil d'Ariane", "Photocopie passeport"]
+  if (voyage) {
+    for (const label of drop) {
+      const item = next.items.find((entry) => entry.name === label)
+      if (item) next = removeModelLine(next, voyage.id, item.id).db
+    }
+  }
+  const trip = next.departureModels.find((model) => model.name === "Voyage")
+  if (trip && !trip.actions.length) {
+    next = addDepartureAction(next, trip.id, "Prévenir la banque", 7).db
+    next = addDepartureAction(next, trip.id, "Inscription fil d'Ariane", 7).db
+    next = addDepartureAction(next, trip.id, "Photocopie passeport", 1).db
+  }
+  for (const name of ["Départ maison", "Absence chat", "Shaé part"]) {
+    const model = next.departureModels.find((entry) => entry.name === name)
+    const bagModel = next.bagModels.find((entry) => entry.name === name)
+    if (!model || !bagModel || model.actions.length) continue
+    for (const line of bagModel.lines) {
+      const item = next.items.find((entry) => entry.id === line.itemId)
+      if (item) next = addDepartureAction(next, model.id, item.name, 0).db
+    }
+  }
+  return { ...next, seed: PERSONAL_SEED }
 }
 
 export function openDb(storage) {
   try {
     const current = load(storage)
-    if (current?.seed === PERSONAL_SEED) return current
+    if (current?.seed === PREVIOUS_SEED) {
+      const migrated = migratePersonal(current)
+      save(migrated, storage)
+      return migrated
+    }
+    if (current?.seed) return current
   } catch {
     // Un fichier illisible est remplacé.
   }

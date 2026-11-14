@@ -11,6 +11,11 @@ import {
   createBag,
   addBagLine,
   removeBagLine,
+  excludeBagLine,
+  includeBagLine,
+  resetBag,
+  dueActions,
+  listedActions,
   toggleCheck,
   setBagQty,
   markEmptied,
@@ -47,8 +52,8 @@ import {
   updateDepartureAction,
   exportData,
   importData,
-} from "./store.js?v=18"
-import { clearSession, dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
+} from "./store.js?v=20"
+import { clearSession, clearDedicated, dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 import { formatDay, formatLine } from "./text.js"
 import { openDb, personalDb } from "./personal.js"
 
@@ -68,8 +73,21 @@ const afterUseLabel = { stay: "Reste prêt", all: "Tout sortir", marked: "Sortir
 const statusLabel = { ready: "Rempli", emptying: "À vider", filling: "À remplir" }
 const weekdays = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 
+const history = []
+
 function persist(next) {
+  history.push(db)
+  if (history.length > 20) history.shift()
   db = applyOutings(next, todayIso())
+  save(db)
+  draw()
+  void pushAgenda()
+}
+
+function undo() {
+  const previous = history.pop()
+  if (!previous) return
+  db = previous
   save(db)
   draw()
   void pushAgenda()
@@ -85,7 +103,14 @@ async function pushAgenda() {
       clientId: googleClientId,
       storage: localStorage,
     })
-    if (!session?.accessToken) return
+    const stored = loadSession(localStorage)
+    if (!session?.accessToken) {
+      if (stored) {
+        agendaNote = "Le jeton Google a expiré. Relie l'agenda."
+        draw()
+      }
+      return
+    }
     await syncDedicated(db, todayIso(), googleApi({ fetch: globalThis.fetch.bind(globalThis), token: session.accessToken }))
     if (agendaNote) {
       agendaNote = ""
@@ -119,8 +144,9 @@ function esc(value) {
 }
 
 function layout(title, body) {
+  const undo = history.length ? `<button type="button" class="quiet" data-action="undo">Annuler</button>` : ""
   app.innerHTML = `
-    <header><p class="brand">Sac de voyage</p><h1>${esc(title)}</h1></header>
+    <header><p class="brand">Sac de voyage</p><h1>${esc(title)}</h1>${undo}</header>
     <main>${body}</main>
     <nav>
       <a href="#/">Sacs</a>
@@ -130,16 +156,23 @@ function layout(title, body) {
     </nav>`
 }
 
+let drawn = ""
+
 function draw() {
   const page = route()
-  if (page.name === "items") return drawItems()
-  if (page.name === "models") return drawModels()
-  if (page.name === "model") return drawModel(page.id)
-  if (page.name === "bag") return drawBag(page.id)
-  if (page.name === "departures") return drawDepartures()
-  if (page.name === "departure") return drawDeparture(page.id)
-  if (page.name === "dmodel") return drawDepartureModel(page.id)
-  drawBags()
+  const key = `${page.name}/${page.id || ""}`
+  const keep = key === drawn
+  const y = keep ? window.scrollY : 0
+  drawn = key
+  if (page.name === "items") drawItems()
+  else if (page.name === "models") drawModels()
+  else if (page.name === "model") drawModel(page.id)
+  else if (page.name === "bag") drawBag(page.id)
+  else if (page.name === "departures") drawDepartures()
+  else if (page.name === "departure") drawDeparture(page.id)
+  else if (page.name === "dmodel") drawDepartureModel(page.id)
+  else drawBags()
+  if (keep) requestAnimationFrame(() => window.scrollTo(0, y))
 }
 
 function shownStatus(bag) {
@@ -148,20 +181,32 @@ function shownStatus(bag) {
 }
 
 function faultNotice(bag) {
-  const names = gapNames(db, bag).map((name) => esc(name)).join(", ")
-  if (!names) return ""
-  if (bag.status === "filling") return `<p class="alert">Pas encore remis : ${names}</p>`
-  if (bag.status === "ready") return `<p class="alert">En défaut. Pas coché : ${names}</p>`
+  const names = gapNames(db, bag)
+  if (!names.length) return ""
+  const shown = names.slice(0, 6).map((name) => esc(name)).join(", ")
+  const more = names.length > 6 ? ` et ${names.length - 6} autre${names.length - 6 > 1 ? "s" : ""}` : ""
+  if (bag.status === "filling") return `<p class="alert">Pas encore remis : ${shown}${more}</p>`
+  if (bag.status === "ready") return `<p class="alert">En défaut. Pas coché : ${shown}${more}</p>`
   return ""
 }
 
 function drawBags() {
+  const today = todayIso()
+  const listed = listedActions(db, today)
+  const due = listed.filter((row) => row.due)
+  const later = listed.filter((row) => !row.due).slice(0, 3)
+  const next = due.length || later.length
+    ? `<h2>À faire</h2>${due.map((row) => `<a class="row" href="#/departs/${row.departureId}"><strong>${esc(row.label)}</strong><span>${esc(row.departureName)}</span></a>`).join("")}${later.map((row) => `<a class="row" href="#/departs/${row.departureId}"><strong>${esc(row.label)}</strong><span>${esc(formatDay(row.since))}</span></a>`).join("")}`
+    : db.departures.length
+      ? ""
+      : `<p class="empty">Aucun départ daté. L'agenda reste vide tant qu'il n'y en a pas un.</p>`
   const cards = [...db.bags]
     .sort((a, b) => attention(db, a) - attention(db, b))
     .map((bag) => {
-      const count = visibleLines(db, bag).length
+      const lines = visibleLines(db, bag)
+      const done = lines.filter((line) => bag.checks[line.itemId]).length
       const gaps = gapNames(db, bag)
-      const detail = gaps.length ? `${shownStatus(bag)} · ${gaps.join(", ")}` : `${shownStatus(bag)} · ${count}`
+      const detail = gaps.length ? `${shownStatus(bag)} · ${done}/${lines.length}` : `${shownStatus(bag)} · ${lines.length}`
       return `<a class="row" href="#/sac/${bag.id}"><strong>${esc(bag.name)}</strong><span>${esc(detail)}</span></a>`
     })
     .join("")
@@ -176,7 +221,7 @@ function drawBags() {
   const copy = `<h2>Copie</h2>
     <button type="button" data-action="export">Télécharger une copie</button>
     <form data-action="import"><input name="file" type="file" accept="application/json"><button>Reprendre une copie</button></form>`
-  layout("Sacs", `${cards || `<p class="empty">Aucun sac.</p>`}${form}${copy}`)
+  layout("Sacs", `${next}${cards || `<p class="empty">Aucun sac.</p>`}${form}${copy}`)
 }
 
 function drawBag(id) {
@@ -188,11 +233,12 @@ function drawBag(id) {
       const qty = bag.status === "emptying"
         ? ""
         : `<input class="qty" data-action="bag-qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">`
-      const own = bag.added.some((entry) => entry.itemId === line.itemId)
-        ? `<button type="button" data-action="remove-bag-line" data-id="${line.itemId}">Retirer</button>`
-        : ""
+      const fromModel = !bag.added.some((entry) => entry.itemId === line.itemId)
+      const own = fromModel
+        ? `<button type="button" class="quiet" data-action="exclude-line" data-id="${line.itemId}">Pas dans ce sac</button>`
+        : `<button type="button" data-action="remove-bag-line" data-id="${line.itemId}">Retirer</button>`
       return `<div class="line">
-        <button class="check ${on}" data-action="check" data-id="${line.itemId}">
+        <button class="check ${on}" data-action="check" data-id="${line.itemId}" aria-pressed="${on ? "true" : "false"}">
           <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
         </button>
         ${qty}
@@ -215,7 +261,11 @@ function drawBag(id) {
         <input name="qty" type="number" min="1" value="1">
         <button>Ajouter</button>
       </form>`
-  layout(bag.name, `<p class="empty">${esc(shownStatus(bag))}</p>${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${extra}${action}<form data-action="rename-bag" data-id="${bag.id}"><input name="name" value="${esc(bag.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
+  const aside = (bag.excluded || [])
+    .map((itemId) => `<button type="button" class="quiet" data-action="include-line" data-id="${itemId}">${esc(itemName(db, itemId))} · remettre</button>`)
+    .join("")
+  const progress = `${visibleLines(db, bag).filter((line) => bag.checks[line.itemId]).length}/${visibleLines(db, bag).length}`
+  layout(bag.name, `<p class="empty">${esc(shownStatus(bag))} · ${progress}</p>${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${aside}${extra}${action}<button data-action="reset-bag" data-id="${bag.id}">Remettre à zéro</button><form data-action="rename-bag" data-id="${bag.id}"><input name="name" value="${esc(bag.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
 }
 
 function daysBefore(offset) {
@@ -389,7 +439,7 @@ function drawDeparture(id) {
   const actions = (model?.actions || [])
     .map((action) => {
       const on = actionChecked(departure, action) ? "on" : ""
-      return `<button class="check ${on}" data-action="trip-check" data-id="${action.id}">
+      return `<button class="check ${on}" data-action="trip-check" data-id="${action.id}" aria-pressed="${on ? "true" : "false"}">
         <span>${esc(action.label)}</span><span>${esc(daysBefore(action.offsetDays))} · ${esc(formatDay(actionDate(departure, action, today)))}</span>
       </button>`
     })
@@ -398,9 +448,8 @@ function drawDeparture(id) {
     .map((bagId) => {
       const bag = db.bags.find((entry) => entry.id === bagId)
       if (!bag) return ""
-      const stuff = resolveLines(db, bag).map((line) => esc(formatLine(itemName(db, line.itemId), line.qty))).join(", ")
       const state = shownStatus(bag)
-      return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${esc(state)}${stuff ? ` · ${stuff}` : ""}</span></a>`
+      return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${esc(state)}</span></a>`
     })
     .join("")
   const edit = departure.kind === "once"
@@ -487,16 +536,18 @@ app.addEventListener("submit", (event) => {
     persist(result.db)
   }
   if (action === "edit-departure") {
-    const result = updateDeparture(db, form.dataset.id, data.get("kind"), data.get("start"), data.get("end"), data.get("weekday"))
+    const result = updateDeparture(db, form.dataset.id, data.get("kind"), data.get("start"), data.get("end"), data.get("weekday"), todayIso())
     if (result.error) return alert(result.error)
     persist(result.db)
   }
   if (action === "import") {
     const file = data.get("file")
     if (!file || typeof file.text !== "function") return
+    if (!confirm("Remplacer toutes les données par ce fichier ?")) return
     file.text().then((raw) => {
       const result = importData(raw)
       if (result.error) return alert(result.error)
+      history.length = 0
       persist(result.db)
     })
   }
@@ -524,13 +575,23 @@ app.addEventListener("click", (event) => {
   const action = target.dataset.action
   const page = route()
   if (action === "check") persist(toggleCheck(db, page.id, target.dataset.id).db)
+  if (action === "undo") return undo()
+  if (action === "exclude-line") persist(excludeBagLine(db, page.id, target.dataset.id).db)
+  if (action === "include-line") persist(includeBagLine(db, page.id, target.dataset.id).db)
+  if (action === "reset-bag") {
+    if (!confirm("Oublier les coches et remettre ce sac à prêt ?")) return
+    persist(resetBag(db, target.dataset.id).db)
+  }
   if (action === "remove-line") persist(removeModelLine(db, page.id, target.dataset.id).db)
   if (action === "remove-bag-line") {
     const result = removeBagLine(db, page.id, target.dataset.id)
     if (result.error) return alert(result.error)
     persist(result.db)
   }
-  if (action === "delete-item") persist(deleteItem(db, target.dataset.id).db)
+  if (action === "delete-item") {
+    if (!confirm("Supprimer cet objet partout ?")) return
+    persist(deleteItem(db, target.dataset.id).db)
+  }
   if (action === "mark") {
     const model = db.bagModels.find((entry) => entry.id === page.id)
     const line = model?.lines.find((entry) => entry.itemId === target.dataset.id)
@@ -541,18 +602,22 @@ app.addEventListener("click", (event) => {
   if (action === "trip-bag") persist(toggleDepartureBag(db, page.id, target.dataset.id).db)
   if (action === "trip-check") persist(toggleDepartureAction(db, page.id, target.dataset.id, todayIso()).db)
   if (action === "delete-bag") {
+    if (!confirm("Supprimer ce sac ?")) return
     location.hash = "#/"
     persist(deleteBag(db, target.dataset.id).db)
   }
   if (action === "delete-model") {
+    if (!confirm("Supprimer ce modèle et ses sacs ?")) return
     location.hash = "#/modeles"
     persist(deleteBagModel(db, target.dataset.id).db)
   }
   if (action === "delete-departure") {
+    if (!confirm("Supprimer ce départ ?")) return
     location.hash = "#/departs"
-    persist(deleteDeparture(db, target.dataset.id).db)
+    persist(deleteDeparture(db, target.dataset.id, todayIso()).db)
   }
   if (action === "delete-dmodel") {
+    if (!confirm("Supprimer ce modèle de départ ?")) return
     location.hash = "#/departs"
     persist(deleteDepartureModel(db, target.dataset.id).db)
   }
@@ -566,9 +631,13 @@ app.addEventListener("click", (event) => {
     URL.revokeObjectURL(url)
   }
   if (action === "disconnect") {
+    const session = loadSession(localStorage)
     clearSession(localStorage)
     agendaNote = ""
     draw()
+    if (session?.accessToken) {
+      clearDedicated(googleApi({ fetch: globalThis.fetch.bind(globalThis), token: session.accessToken })).catch(() => {})
+    }
   }
   if (action === "connect-google") {
     const google = globalThis.google

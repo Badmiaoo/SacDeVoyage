@@ -35,7 +35,7 @@ jobs:
       - name: Préparer le site
         run: |
           mkdir dist
-          cp index.html styles.css .nojekyll dist/
+          cp index.html styles.css manifest.json .nojekyll dist/
           cp -r src dist/src
       - uses: actions/upload-pages-artifact@v3
         with:

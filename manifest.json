@@ -1,0 +1,9 @@
+{
+  "name": "Sac de voyage",
+  "short_name": "Sacs",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f3f0e8",
+  "theme_color": "#1c1915",
+  "lang": "fr"
+}
