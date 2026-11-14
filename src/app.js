@@ -55,7 +55,7 @@ import {
 } from "./store.js?v=20"
 import { clearSession, clearDedicated, dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 import { formatDay, formatLine } from "./text.js"
-import { openDb, personalDb } from "./personal.js"
+import { openDb, personalDb } from "./personal.js?v=21"
 
 const app = document.querySelector("#app")
 let departureKind = "once"

@@ -171,11 +171,12 @@ test("les choses à faire ne sont plus dans le sac voyage", () => {
   assert.equal(names.includes("Photocopie passeport"), false)
   const model = db.departureModels.find((entry) => entry.name === "Voyage")
   assert.deepEqual(model.actions.map((action) => action.label), [
+    "Vérifier les papiers",
     "Prévenir la banque",
     "Inscription fil d'Ariane",
     "Photocopie passeport",
   ])
-  assert.equal(db.departureModels.find((entry) => entry.name === "Départ maison").actions.length, 10)
+  assert.equal(db.departureModels.find((entry) => entry.name === "Départ maison").actions.length, 1)
 })
 
 test("une copie sans marque n'est pas réécrasée", () => {
