@@ -75,15 +75,21 @@ const statusLabel = { ready: "Rempli", emptying: "À vider", filling: "À rempli
 const weekdays = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 
 const UNDO = "sac-undo"
-const history = JSON.parse(sessionStorage.getItem(UNDO) || "[]")
+const undoStack = (() => {
+  try {
+    return JSON.parse(sessionStorage.getItem(UNDO) || "[]")
+  } catch {
+    return []
+  }
+})()
 
 function remember() {
-  sessionStorage.setItem(UNDO, JSON.stringify(history.slice(-20)))
+  sessionStorage.setItem(UNDO, JSON.stringify(undoStack.slice(-20)))
 }
 
 function persist(next) {
-  history.push(db)
-  if (history.length > 20) history.shift()
+  undoStack.push(db)
+  if (undoStack.length > 20) undoStack.shift()
   remember()
   db = applyOutings(next, todayIso())
   save(db)
@@ -92,7 +98,7 @@ function persist(next) {
 }
 
 function undo() {
-  const previous = history.pop()
+  const previous = undoStack.pop()
   if (!previous) return
   remember()
   db = previous
@@ -160,15 +166,17 @@ function esc(value) {
 }
 
 function layout(title, body) {
-  const undo = `<button type="button" class="quiet" data-action="undo" style="visibility:${history.length ? "visible" : "hidden"}">Annuler</button>`
+  const page = route()
+  const undo = `<button type="button" class="quiet" data-action="undo" style="visibility:${undoStack.length ? "visible" : "hidden"}">Annuler le dernier geste</button>`
+  const tab = (name, href, label) => `<a href="${href}" ${page.name === name || (name === "bags" && page.name === "bag") || (name === "departures" && page.name === "departure") || (name === "models" && (page.name === "model" || page.name === "dmodel")) || (name === "items" && page.name === "items") ? 'class="on"' : ""}>${label}</a>`
   app.innerHTML = `
     <header><p class="brand">Sac de voyage</p><h1>${esc(title)}</h1>${undo}</header>
     <main>${body}</main>
     <nav>
-      <a href="#/">Sacs</a>
-      <a href="#/departs">Départs</a>
-      <a href="#/modeles">Modèles</a>
-      <a href="#/objets">Objets</a>
+      ${tab("bags", "#/", "Sacs")}
+      ${tab("departures", "#/departs", "Départs")}
+      ${tab("models", "#/modeles", "Modèles")}
+      ${tab("items", "#/objets", "Objets")}
     </nav>`
 }
 
@@ -177,7 +185,10 @@ let drawn = ""
 function draw() {
   const page = route()
   const key = `${page.name}/${page.id || ""}`
-  if (key !== drawn) tune = false
+  if (key !== drawn) {
+    tune = false
+    if (page.name === "bag") bagQuery = ""
+  }
   const keep = key === drawn
   const y = keep ? window.scrollY : 0
   drawn = key
@@ -193,7 +204,9 @@ function draw() {
 }
 
 function shownStatus(bag) {
-  if (missingChecks(db, bag).length) return "En défaut"
+  const gaps = missingChecks(db, bag)
+  if (gaps.length && Object.keys(bag.checks).length === 0 && bag.status === "ready") return "À vérifier"
+  if (gaps.length) return "En défaut"
   return statusLabel[bag.status] || ""
 }
 
@@ -225,7 +238,7 @@ function drawBags() {
       const lines = visibleLines(db, bag)
       const done = lines.filter((line) => bag.checks[line.itemId]).length
       const gaps = gapNames(db, bag)
-      const detail = gaps.length ? `${shownStatus(bag)} · ${done}/${lines.length}` : `${shownStatus(bag)} · ${lines.length}`
+      const detail = `${shownStatus(bag)} · ${done}/${lines.length}`
       return `<a class="row" href="#/sac/${bag.id}"><strong>${esc(bag.name)}</strong><span>${esc(detail)}</span></a>`
     })
     .join("")
@@ -320,7 +333,7 @@ function drawBag(id) {
   const settings = tune
     ? `<button data-action="reset-bag" data-id="${bag.id}">Remettre à zéro</button><form data-action="rename-bag" data-id="${bag.id}"><input name="name" value="${esc(bag.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button>`
     : ""
-  layout(bag.name, `${links}<p class="empty">${esc(shownStatus(bag))} · ${progress}</p>${finder}${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${aside}${extra}${action}${settings}<button type="button" class="quiet" data-action="tune">${tune ? "Fermer les réglages" : "Régler ce sac"}</button><a class="back" href="#/">Retour</a>`)
+  layout(bag.name, `<p class="status">${esc(shownStatus(bag))} · ${progress}</p>${action}${finder}${faultNotice(bag)}${note}${lines || `<p class="empty">${query ? "Aucun résultat." : "Rien à montrer."}</p>`}${aside}${extra}${settings}${links}<button type="button" class="quiet" data-action="tune">${tune ? "Fermer les réglages" : "Régler ce sac"}</button><a class="back" href="#/">Retour</a>`)
 }
 
 function daysBefore(offset) {
@@ -424,8 +437,9 @@ function drawItems() {
 }
 
 function drawDepartures() {
-  const trips = db.departures
+  const trips = [...db.departures]
     .filter((departure) => !tripQuery || matches(departure.name, tripQuery))
+    .sort((a, b) => String(a.start || "9").localeCompare(String(b.start || "9")))
     .map((departure) => {
       const when = departure.kind === "once"
         ? `Du ${formatDay(departure.start)} au ${formatDay(departure.end)}`
@@ -537,7 +551,9 @@ function drawDeparture(id) {
     .map((bagId) => {
       const bag = db.bags.find((entry) => entry.id === bagId)
       if (!bag) return ""
-      const state = shownStatus(bag)
+      const lines = visibleLines(db, bag)
+      const done = lines.filter((line) => bag.checks[line.itemId]).length
+      const state = `${shownStatus(bag)} · ${done}/${lines.length}`
       return `<a class="row" href="#/sac/${bagId}"><strong>${esc(bag.name)}</strong><span>${esc(state)}</span></a>`
     })
     .join("")
@@ -708,12 +724,12 @@ app.addEventListener("click", (event) => {
     return
   }
   if (action === "delete-bag") {
-    if (!confirm("Supprimer ce sac ?")) return
+    if (!confirm("Supprimer ce sac ? Les départs qui s'en servent le perdront.")) return
     location.hash = "#/"
     persist(deleteBag(db, target.dataset.id).db)
   }
   if (action === "delete-model") {
-    if (!confirm("Supprimer ce modèle et ses sacs ?")) return
+    if (!confirm("Supprimer ce modèle, ses sacs, et les départs qui s'en servent ?")) return
     location.hash = "#/modeles"
     persist(deleteBagModel(db, target.dataset.id).db)
   }
@@ -723,7 +739,7 @@ app.addEventListener("click", (event) => {
     persist(deleteDeparture(db, target.dataset.id, todayIso()).db)
   }
   if (action === "delete-dmodel") {
-    if (!confirm("Supprimer ce modèle de départ ?")) return
+    if (!confirm("Supprimer ce modèle de départ et les départs datés qui s'en servent ?")) return
     location.hash = "#/modeles"
     persist(deleteDepartureModel(db, target.dataset.id).db)
   }
@@ -810,6 +826,22 @@ app.addEventListener("change", (event) => {
 })
 
 window.addEventListener("hashchange", draw)
+window.addEventListener("storage", (event) => {
+  if (event.key !== "sac-de-voyage") return
+  try {
+    db = applyOutings(openDb(localStorage), todayIso())
+    draw()
+  } catch {
+    // Un autre onglet a écrit quelque chose d'illisible.
+  }
+})
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    db = applyOutings(db, todayIso())
+    draw()
+    void pushAgenda()
+  }
+})
 
 const clean = dropAuthQuery(location.href)
 if (clean) history.replaceState(null, "", clean)

@@ -257,10 +257,10 @@ test("la fois suivante n'existe pas tant que la précédente n'est pas cochée",
   assert.equal(events.filter((event) => event.kind === "action").length, 0)
   assert.equal(actionDate(db.departures[0], action, "2026-11-16"), "2026-11-17")
   assert.equal(agendaEvents(db, "2026-11-16").some((event) => event.kind === "action"), false)
-  assert.equal(agendaEvents(db, "2026-11-17").some((event) => event.title === "Badge"), true)
+  assert.equal(agendaEvents(db, "2026-11-17").some((event) => event.title.includes("Badge")), true)
   db = toggleDepartureAction(db, departure.id, action.id, "2026-11-17").db
-  assert.equal(agendaEvents(db, "2026-11-20").some((event) => event.title === "Badge"), false)
-  assert.equal(agendaEvents(db, "2026-11-24").some((event) => event.title === "Badge"), true)
+  assert.equal(agendaEvents(db, "2026-11-20").some((event) => event.title.includes("Badge")), false)
+  assert.equal(agendaEvents(db, "2026-11-24").some((event) => event.title.includes("Badge")), true)
 })
 
 test("passer le jour ne retire pas une action non cochée", () => {
@@ -270,10 +270,10 @@ test("passer le jour ne retire pas une action non cochée", () => {
   db = addDepartureAction(db, trip.model.id, "Papiers", 30).db
   db = createDeparture(db, "CSE", trip.model.id, "once", "2026-08-12", "2026-08-20", "", "2026-06-01").db
   const action = db.departureModels[0].actions[0]
-  assert.equal(agendaEvents(db, "2026-07-13").some((event) => event.title === "Papiers"), true)
-  assert.equal(agendaEvents(db, "2026-08-01").some((event) => event.title === "Papiers"), true)
+  assert.equal(agendaEvents(db, "2026-07-13").some((event) => event.title.includes("Papiers")), true)
+  assert.equal(agendaEvents(db, "2026-08-01").some((event) => event.title.includes("Papiers")), true)
   db = toggleDepartureAction(db, db.departures[0].id, action.id, "2026-08-01").db
-  assert.equal(agendaEvents(db, "2026-08-02").some((event) => event.title === "Papiers"), false)
+  assert.equal(agendaEvents(db, "2026-08-02").some((event) => event.title.includes("Papiers")), false)
 })
 
 test("l'agenda dit l'état du sac et jamais son contenu", () => {

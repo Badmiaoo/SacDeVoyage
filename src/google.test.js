@@ -106,7 +106,7 @@ test("le calendrier dédié est créé, l'autre reste intact", async () => {
   assert.equal(api.state.events.perso.length, 1)
   assert.equal(api.state.events.perso[0].summary, "Dentiste")
   assert.equal(api.state.events.sac.length, 1)
-  assert.equal(api.state.events.sac[0].summary, "Badge")
+  assert.equal(api.state.events.sac[0].summary, "Mercredi · Badge")
   assert.equal(api.state.events.sac[0].description, "")
   assert.equal(JSON.stringify(api.state.events.sac).includes("Masque"), false)
   await syncDedicated(db, "2026-11-12", api)

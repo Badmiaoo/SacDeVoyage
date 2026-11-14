@@ -48,6 +48,8 @@ nav {
   background: #1c1915;
 }
 nav a { color: white; text-align: center; text-decoration: none; padding: 1rem 0.2rem; font-size: 0.95rem; }
+nav a.on { background: #3d3832; }
+.status { font-weight: 700; }
 
 input.qty { flex: 0 0 4.5rem; }
 .check { flex: 1; }

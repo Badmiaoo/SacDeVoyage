@@ -27,7 +27,8 @@ function id() {
 }
 
 function sameName(a, b) {
-  return a.trim().toLocaleLowerCase("fr") === b.trim().toLocaleLowerCase("fr")
+  const norm = (value) => value.trim().normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase("fr")
+  return norm(a) === norm(b)
 }
 
 export function todayIso(date = new Date()) {
@@ -100,15 +101,18 @@ export function deleteItem(db, itemId) {
         added: bag.added.filter((line) => line.itemId !== itemId),
         qty: Object.fromEntries(Object.entries(bag.qty).filter(([key]) => key !== itemId)),
         checks: Object.fromEntries(Object.entries(bag.checks).filter(([key]) => key !== itemId)),
+        excluded: (bag.excluded || []).filter((id) => id !== itemId),
       })),
     },
   }
 }
 
-export function createBagModel(db, name) {
+export function createBagModel(db, name, afterUse = "stay") {
   const trimmed = name.trim()
   if (!trimmed) return { db, error: "Le nom est vide." }
-  const model = { id: id(), name: trimmed, afterUse: "stay", lines: [] }
+  if (db.bagModels.some((model) => sameName(model.name, trimmed))) return { db, error: "Ce nom existe déjà." }
+  const chosen = ["stay", "all", "marked"].includes(afterUse) ? afterUse : "stay"
+  const model = { id: id(), name: trimmed, afterUse: chosen, lines: [] }
   return { db: { ...db, bagModels: [...db.bagModels, model] }, model }
 }
 
@@ -123,8 +127,8 @@ export function setAfterUse(db, modelId, afterUse) {
 }
 
 export function setModelLine(db, modelId, itemId, qty) {
-  if (!db.items.some((item) => item.id === itemId)) return { db }
-  const count = Math.max(1, Number(qty) || 1)
+  if (!db.items.some((item) => item.id === itemId)) return { db, error: "L'objet n'existe pas." }
+  const count = Math.max(1, Math.floor(Number(qty) || 1))
   return {
     db: {
       ...db,
@@ -136,6 +140,9 @@ export function setModelLine(db, modelId, itemId, qty) {
           : [...model.lines, { itemId, qty: count, removeAfter: false, group: "" }]
         return { ...model, lines }
       }),
+      bags: db.bags.map((bag) =>
+        bag.modelId === modelId ? { ...bag, excluded: (bag.excluded || []).filter((id) => id !== itemId) } : bag,
+      ),
     },
   }
 }
@@ -197,6 +204,7 @@ export function createBag(db, name, modelId) {
   if (!db.bagModels.some((model) => model.id === modelId)) {
     return { db, error: "Le modèle n'existe pas." }
   }
+  if (db.bags.some((bag) => sameName(bag.name, trimmed))) return { db, error: "Ce nom existe déjà." }
   const bag = {
     id: id(),
     name: trimmed,
@@ -245,14 +253,16 @@ export function renameDepartureModel(db, modelId, name) {
 
 export function addBagLine(db, bagId, itemId, qty) {
   if (!db.items.some((item) => item.id === itemId)) return { db, error: "L'objet n'existe pas." }
-  const count = Math.max(1, Number(qty) || 1)
+  const count = Math.max(1, Math.floor(Number(qty) || 1))
   return {
     db: {
       ...db,
       bags: db.bags.map((bag) => {
         if (bag.id !== bagId) return bag
         const model = db.bagModels.find((entry) => entry.id === bag.modelId)
-        if (model?.lines.some((line) => line.itemId === itemId)) return bag
+        if (model?.lines.some((line) => line.itemId === itemId)) {
+          return { ...bag, excluded: (bag.excluded || []).filter((id) => id !== itemId), qty: { ...bag.qty, [itemId]: count } }
+        }
         if (bag.added.some((line) => line.itemId === itemId)) {
           return {
             ...bag,
@@ -349,7 +359,7 @@ export function toggleCheck(db, bagId, itemId) {
 }
 
 export function setBagQty(db, bagId, itemId, qty) {
-  const count = Math.max(1, Number(qty) || 1)
+  const count = Math.max(1, Math.floor(Number(qty) || 1))
   return {
     db: {
       ...db,
@@ -392,11 +402,10 @@ export function markFilled(db, bagId) {
 
 export function resolveLines(db, bag) {
   const model = db.bagModels.find((entry) => entry.id === bag.modelId)
-  if (!model) return []
   const known = new Set(db.items.map((item) => item.id))
   const excluded = new Set(bag.excluded || [])
   const lines = []
-  for (const line of model.lines) {
+  for (const line of model?.lines || []) {
     if (!known.has(line.itemId) || excluded.has(line.itemId)) continue
     lines.push({
       itemId: line.itemId,
@@ -405,7 +414,7 @@ export function resolveLines(db, bag) {
       group: line.group || "",
     })
   }
-  for (const extra of bag.added) {
+  for (const extra of bag.added || []) {
     if (!known.has(extra.itemId)) continue
     if (lines.some((line) => line.itemId === extra.itemId)) continue
     lines.push({
@@ -457,6 +466,7 @@ export function bagName(db, bagId) {
 export function createDepartureModel(db, name) {
   const trimmed = name.trim()
   if (!trimmed) return { db, error: "Le nom est vide." }
+  if (db.departureModels.some((model) => sameName(model.name, trimmed))) return { db, error: "Ce nom existe déjà." }
   const model = { id: id(), name: trimmed, bagIds: [], actions: [] }
   return { db: { ...db, departureModels: [...db.departureModels, model] }, model }
 }
@@ -480,7 +490,7 @@ export function toggleDepartureBag(db, modelId, bagId) {
 export function addDepartureAction(db, modelId, label, daysBefore) {
   const trimmed = label.trim()
   if (!trimmed) return { db, error: "Le nom est vide." }
-  const offsetDays = -Math.max(0, Number(daysBefore) || 0)
+  const offsetDays = -Math.min(365, Math.max(0, Math.floor(Number(daysBefore) || 0)))
   const action = { id: id(), label: trimmed, offsetDays }
   return {
     db: {
@@ -495,7 +505,7 @@ export function addDepartureAction(db, modelId, label, daysBefore) {
 export function updateDepartureAction(db, modelId, actionId, label, daysBefore) {
   const trimmed = String(label || "").trim()
   if (!trimmed) return { db, error: "Le nom est vide." }
-  const offsetDays = -Math.max(0, Number(daysBefore) || 0)
+  const offsetDays = -Math.min(365, Math.max(0, Math.floor(Number(daysBefore) || 0)))
   let found = false
   const departureModels = db.departureModels.map((model) => {
     if (model.id !== modelId) return model
@@ -525,9 +535,12 @@ export function updateDeparture(db, departureId, kind, start, end, weekday, toda
       ...db,
       departures: db.departures.map((entry) => {
         if (entry.id !== departureId) return entry
-        const done = kind === "once"
-          ? Object.fromEntries(Object.entries(entry.done).map(([key, value]) => [key, value === entry.start ? start : value]))
-          : entry.done
+        const done = kind === entry.kind
+          ? kind === "once"
+            ? Object.fromEntries(Object.entries(entry.done).map(([key, value]) => [key, value === entry.start ? start : value]))
+            : entry.done
+          : {}
+        const keepOuting = kind === "once" && entry.kind === "once" && end < today
         return {
           ...entry,
           kind,
@@ -535,7 +548,7 @@ export function updateDeparture(db, departureId, kind, start, end, weekday, toda
           end: kind === "once" ? end : null,
           weekday: kind === "recurring" ? day : null,
           done,
-          emptiedOn: today && kind === "once" && end >= today ? null : entry.emptiedOn,
+          emptiedOn: keepOuting ? entry.emptiedOn : today && kind === "once" && end >= today ? null : entry.emptiedOn,
         }
       }),
     },
@@ -559,12 +572,14 @@ export function importData(raw) {
     if (!Array.isArray(data[key])) return { error: "Ce fichier n'est pas une sauvegarde." }
   }
   if (!data.seed) data = { ...data, seed: "imported" }
+  data.bags = (data.bags || []).map((bag) => ({ added: [], qty: {}, checks: {}, excluded: [], status: "ready", ...bag }))
   return { db: { ...emptyDb(), ...data, version: 1 } }
 }
 
 export function createDeparture(db, name, modelId, kind, start, end, weekday, createdOn = null) {
   const trimmed = name.trim()
   if (!trimmed) return { db, error: "Le nom est vide." }
+  if (db.departures.some((entry) => sameName(entry.name, trimmed))) return { db, error: "Ce nom existe déjà." }
   if (!db.departureModels.some((model) => model.id === modelId)) {
     return { db, error: "Le modèle n'existe pas." }
   }
@@ -677,7 +692,7 @@ export function agendaEvents(db, today) {
       if (!day) continue
       const since = addDays(day, action.offsetDays)
       if (since > today) continue
-      events.push({ kind: "action", key: `action:${departure.id}:${action.id}:${day}`, title: action.label, since })
+      events.push({ kind: "action", key: `action:${departure.id}:${action.id}:${day}`, title: `${departure.name} · ${action.label}`, since })
     }
   }
   for (const bag of db.bags) {
@@ -748,8 +763,12 @@ export function deleteBagModel(db, modelId) {
 }
 
 export function deleteDeparture(db, departureId, today = null) {
+  const gone = db.departures.find((entry) => entry.id === departureId)
   const next = { ...db, departures: db.departures.filter((entry) => entry.id !== departureId) }
-  return today ? releaseUnusedEmptying(next, today) : { db: next }
+  if (!today || !gone) return { db: next }
+  const when = outingDate(gone, today)
+  if (when && today > when) return { db: next }
+  return releaseUnusedEmptying(next, today)
 }
 
 export function deleteDepartureModel(db, modelId) {

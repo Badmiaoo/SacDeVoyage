@@ -17,8 +17,8 @@ import {
   createDeparture,
 } from "./store.js"
 
-export const PERSONAL_SEED = "maquette-2"
-const KEEP = new Set([PERSONAL_SEED, "imported"])
+export const PERSONAL_SEED = "maquette-3"
+const KEEP = new Set([PERSONAL_SEED, "maquette-2", "imported"])
 
 const maison = [
   "Vider frigo / boite a pain / placard / fruit",
@@ -158,7 +158,7 @@ function makeTrip(db, name, bagIds, actions = []) {
 
 export function personalDb() {
   let db = emptyDb()
-  const house = makeBag(db, "Départ maison", "all", maison)
+  const house = makeBag(db, "Départ maison", "stay", maison)
   const kit = makeBag(house.db, "Trousse de secours", "stay", trousse)
   const short = makeBag(kit.db, "Trousse courte", "stay", courte)
   const long = makeBag(short.db, "Trousse longue", "stay", longue)
@@ -182,12 +182,12 @@ export function personalDb() {
   const backpack = createBag(db, "Sac à dos", trip.modelId)
   db = excludeBagLine(backpack.db, backpack.bag.id, itemId(backpack.db, "cadenas TSA").id).db
   db = excludeBagLine(db, backpack.bag.id, itemId(db, "Coussin avion à rembourrer").id).db
-  const cat = makeBag(db, "Absence chat", "all", chat)
+  const cat = makeBag(db, "Absence chat", "stay", chat)
   const away = makeBag(cat.db, "Shaé part", "all", shae)
   const last = makeBag(away.db, "Week-end", "all", weekend)
   db = last.db
 
-  const houseTrip = makeTrip(db, "Départ maison", [house.bagId], [{ label: "Prévenir la voisine", days: 1 }])
+  const houseTrip = makeTrip(db, "Départ maison", [house.bagId], maison.map((label) => ({ label, days: 1 })))
   const voyageTrip = makeTrip(houseTrip.db, "Voyage", [kit.bagId, long.bagId, trip.bagId], [
     { label: "Vérifier les papiers", days: 30 },
     { label: "Prévenir la banque", days: 7 },
@@ -196,7 +196,7 @@ export function personalDb() {
   ])
   const diveTrip = makeTrip(voyageTrip.db, "Plongée", [dive.bag.id], [{ label: "Gonfler le stab", days: 0 }])
   const paris = makeTrip(diveTrip.db, "Paris", [short.bagId], [{ label: "Badge", days: 0 }])
-  const catTrip = makeTrip(paris.db, "Absence chat", [cat.bagId], [{ label: "Laisser la clé", days: 1 }])
+  const catTrip = makeTrip(paris.db, "Absence chat", [cat.bagId], chat.map((label) => ({ label, days: 1 })))
   const shaeTrip = makeTrip(catTrip.db, "Shaé part", [away.bagId])
   const weekendTrip = makeTrip(shaeTrip.db, "Week-end", [last.bagId])
   db = weekendTrip.db

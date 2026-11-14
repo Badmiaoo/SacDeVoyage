@@ -50,7 +50,7 @@ test("les trois listes sont là, sans les anciennes données", () => {
   const voyage = db.departureModels.find((model) => model.name === "Voyage")
   const names = voyage.bagIds.map((id) => db.bags.find((bag) => bag.id === id).name)
   assert.deepEqual(names, ["Trousse de secours", "Trousse longue", "Voyage"])
-  assert.equal(db.departureModels.find((model) => model.name === "Départ maison").actions.length, 1)
+  assert.equal(db.departureModels.find((model) => model.name === "Départ maison").actions.length, 10)
 })
 
 test("ouvrir remplace un ancien fichier, puis garde les changements", () => {

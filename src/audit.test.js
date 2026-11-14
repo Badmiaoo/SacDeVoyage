@@ -134,7 +134,7 @@ test("supprimer le départ remet un sac encore à vider", () => {
   db = createDeparture(db, "Juin", trip.model.id, "once", "2026-08-12", "2026-08-20", "", "2026-06-01").db
   db = applyOutings(db, "2026-08-21")
   db = deleteDeparture(db, db.departures[0].id, "2026-08-21").db
-  assert.equal(db.bags[0].status, "ready")
+  assert.equal(db.bags[0].status, "emptying")
 })
 
 test("un clic trop tôt ne défait pas la coche", () => {
@@ -221,7 +221,7 @@ test("les choses à faire ne sont plus dans le sac voyage", () => {
     "Inscription fil d'Ariane",
     "Photocopie passeport",
   ])
-  assert.equal(db.departureModels.find((entry) => entry.name === "Départ maison").actions.length, 1)
+  assert.equal(db.departureModels.find((entry) => entry.name === "Départ maison").actions.length, 10)
 })
 
 test("une copie sans marque n'est pas réécrasée", () => {
