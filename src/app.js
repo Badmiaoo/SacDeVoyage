@@ -56,7 +56,7 @@ import {
 } from "./store.js?v=20"
 import { clearSession, clearDedicated, dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 import { formatDay, formatLine } from "./text.js"
-import { openDb, personalDb } from "./personal.js?v=22"
+import { openDb, personalDb } from "./personal.js?v=23"
 
 const app = document.querySelector("#app")
 let departureKind = "once"
@@ -176,6 +176,7 @@ let drawn = ""
 function draw() {
   const page = route()
   const key = `${page.name}/${page.id || ""}`
+  if (key !== drawn) tune = false
   const keep = key === drawn
   const y = keep ? window.scrollY : 0
   drawn = key
@@ -198,6 +199,8 @@ function shownStatus(bag) {
 let homeQuery = ""
 let bagQuery = ""
 let itemQuery = ""
+let tripQuery = ""
+let tune = false
 
 function matches(name, query) {
   return name.toLocaleLowerCase("fr").includes(query.trim().toLocaleLowerCase("fr"))
@@ -243,11 +246,14 @@ function drawBags() {
       </form>`
     : `<p class="empty">Crée d'abord un modèle.</p>`
   const search = `<form data-action="find-home"><input name="q" value="${esc(homeQuery)}" placeholder="Chercher un sac"></form>`
-  const copy = `<h2>Autre téléphone</h2>
-    <p class="empty">Télécharge la copie ici, envoie-la, puis reprends-la là-bas. C'est le seul pont.</p>
-    <button type="button" data-action="export">Télécharger une copie</button>
-    <form data-action="import"><input name="file" type="file" accept="application/json"><button>Reprendre une copie</button></form>`
-  layout("Sacs", `${next}${search}${cards || `<p class="empty">Aucun sac.</p>`}${form}${copy}`)
+  const workshop = tune
+    ? `<h2>Réglages</h2>${form}
+      <h2>Autre téléphone</h2>
+      <p class="empty">Télécharge la copie ici, envoie-la, puis reprends-la là-bas. C'est le seul pont.</p>
+      <button type="button" data-action="export">Télécharger une copie</button>
+      <form data-action="import"><input name="file" type="file" accept="application/json"><button>Reprendre une copie</button></form>`
+    : ""
+  layout("Sacs", `${next}${search}${cards || `<p class="empty">Aucun sac.</p>`}${workshop}<button type="button" class="quiet" data-action="tune">${tune ? "Fermer les réglages" : "Réglages"}</button>`)
 }
 
 function drawBag(id) {
@@ -267,13 +273,15 @@ function drawBag(id) {
       const body = rows
         .map((line) => {
           const on = bag.checks[line.itemId] ? "on" : ""
-          const qty = bag.status === "emptying"
+          const fromModel = !bag.added.some((entry) => entry.itemId === line.itemId)
+          const qty = !tune || bag.status === "emptying"
             ? ""
             : `<input class="qty" data-action="bag-qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">`
-          const fromModel = !bag.added.some((entry) => entry.itemId === line.itemId)
-          const own = fromModel
-            ? `<button type="button" class="quiet" data-action="exclude-line" data-id="${line.itemId}">Pas dans ce sac</button>`
-            : `<button type="button" data-action="remove-bag-line" data-id="${line.itemId}">Retirer</button>`
+          const own = !tune
+            ? ""
+            : fromModel
+              ? `<button type="button" class="quiet" data-action="exclude-line" data-id="${line.itemId}">Pas dans ce sac</button>`
+              : `<button type="button" data-action="remove-bag-line" data-id="${line.itemId}">Retirer</button>`
           return `<div class="line">
             <button class="check ${on}" data-action="check" data-id="${line.itemId}" aria-pressed="${on ? "true" : "false"}">
               <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
@@ -295,18 +303,32 @@ function drawBag(id) {
   const note = bag.status === "emptying" ? `<p class="empty">Seulement ce qui doit sortir.</p>` : ""
   const present = new Set(resolveLines(db, bag).map((line) => line.itemId))
   const remaining = db.items.filter((item) => !present.has(item.id))
-  const extra = bag.status === "emptying" || !remaining.length
+  const extra = !tune || bag.status === "emptying" || !remaining.length
     ? ""
     : `<form data-action="bag-line">
         <select name="item"><option value="">Ajouter dans ce sac seulement</option>${remaining.map((item) => `<option value="${item.id}">${esc(item.name)}</option>`).join("")}</select>
         <input name="qty" type="number" min="1" value="1">
         <button>Ajouter</button>
       </form>`
-  const aside = (bag.excluded || [])
-    .map((itemId) => `<button type="button" class="quiet" data-action="include-line" data-id="${itemId}">${esc(itemName(db, itemId))} · remettre</button>`)
-    .join("")
+  const aside = tune
+    ? (bag.excluded || [])
+        .map((itemId) => `<button type="button" class="quiet" data-action="include-line" data-id="${itemId}">${esc(itemName(db, itemId))} · remettre</button>`)
+        .join("")
+    : ""
+  const model = db.bagModels.find((entry) => entry.id === bag.modelId)
+  const usedBy = db.departures.filter((departure) => {
+    const trip = db.departureModels.find((entry) => entry.id === departure.modelId)
+    return trip?.bagIds.includes(bag.id)
+  })
+  const links = [
+    model ? `<a class="row" href="#/modeles/${model.id}"><strong>Modèle</strong><span>${esc(model.name)}</span></a>` : "",
+    ...usedBy.map((departure) => `<a class="row" href="#/departs/${departure.id}"><strong>Départ</strong><span>${esc(departure.name)}</span></a>`),
+  ].join("")
   const progress = `${visibleLines(db, bag).filter((line) => bag.checks[line.itemId]).length}/${visibleLines(db, bag).length}`
-  layout(bag.name, `<p class="empty">${esc(shownStatus(bag))} · ${progress}</p>${finder}${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${aside}${extra}${action}<button data-action="reset-bag" data-id="${bag.id}">Remettre à zéro</button><form data-action="rename-bag" data-id="${bag.id}"><input name="name" value="${esc(bag.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
+  const settings = tune
+    ? `<button data-action="reset-bag" data-id="${bag.id}">Remettre à zéro</button><form data-action="rename-bag" data-id="${bag.id}"><input name="name" value="${esc(bag.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button>`
+    : ""
+  layout(bag.name, `${links}<p class="empty">${esc(shownStatus(bag))} · ${progress}</p>${finder}${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${aside}${extra}${action}${settings}<button type="button" class="quiet" data-action="tune">${tune ? "Fermer les réglages" : "Régler ce sac"}</button><a class="back" href="#/">Retour</a>`)
 }
 
 function daysBefore(offset) {
@@ -318,19 +340,22 @@ function daysBefore(offset) {
 
 function drawModels() {
   const bags = db.bagModels
-    .map((model) => `<a class="row" href="#/modeles/${model.id}"><strong>${esc(model.name)}</strong><span>Sac</span></a>`)
+    .filter((model) => !tripQuery || matches(model.name, tripQuery))
+    .map((model) => `<a class="row" href="#/modeles/${model.id}"><strong>${esc(model.name)}</strong><span>Contenu d'un sac</span></a>`)
     .join("")
   const trips = db.departureModels
-    .map((model) => `<a class="row" href="#/dmodele/${model.id}"><strong>${esc(model.name)}</strong><span>Départ</span></a>`)
+    .filter((model) => !tripQuery || matches(model.name, tripQuery))
+    .map((model) => `<a class="row" href="#/dmodele/${model.id}"><strong>${esc(model.name)}</strong><span>Sacs et choses à faire</span></a>`)
     .join("")
   layout(
     "Modèles",
-    `<h2>Sacs</h2>
-    <p class="empty">Ce qui doit être dans le sac.</p>
+    `<form data-action="find-trip"><input name="q" value="${esc(tripQuery)}" placeholder="Chercher un modèle"></form>
+    <h2>Contenu des sacs</h2>
+    <p class="empty">Ce qui doit être dedans. Pas de date, pas de coche.</p>
     ${bags || `<p class="empty">Aucun.</p>`}
     <form data-action="model"><input name="name" placeholder="Nom, par exemple Plongée" required><button>Créer un modèle de sac</button></form>
-    <h2>Départs</h2>
-    <p class="empty">Quels sacs partent, et quoi faire avant. Pas de date ici.</p>
+    <h2>Forme des départs</h2>
+    <p class="empty">Quels sacs partent, et quoi faire avant. La date se choisit dans Départs.</p>
     ${trips || `<p class="empty">Aucun.</p>`}
     <form data-action="dmodel"><input name="name" placeholder="Nom, par exemple Avec avion" required><button>Créer un modèle de départ</button></form>`,
   )
@@ -342,20 +367,36 @@ function drawModel(id) {
   const choices = ["stay", "all", "marked"]
     .map((value) => `<option value="${value}" ${model.afterUse === value ? "selected" : ""}>${esc(afterUseLabel[value])}</option>`)
     .join("")
-  const lines = model.lines
-    .map((line) => {
-      const mark = model.afterUse === "marked"
-        ? `<button type="button" data-action="mark" data-id="${line.itemId}">${line.removeAfter ? "À sortir" : "Reste"}</button>`
-        : ""
-      return `<div class="line">
-        <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
-        <input class="qty" data-action="qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">
-        <input data-action="group" data-id="${line.itemId}" value="${esc(line.group || "")}" placeholder="Groupe">
-        ${mark}
-        <button data-action="remove-line" data-id="${line.itemId}">Retirer</button>
-      </div>`
+  const grouped = new Map()
+  for (const line of model.lines) {
+    const key = line.group || ""
+    if (!grouped.has(key)) grouped.set(key, [])
+    grouped.get(key).push(line)
+  }
+  const lines = [...grouped.entries()]
+    .map(([group, rows]) => {
+      const head = group ? `<h2>${esc(group)}</h2>` : ""
+      const body = rows
+        .map((line) => {
+          const mark = model.afterUse === "marked"
+            ? `<button type="button" data-action="mark" data-id="${line.itemId}">${line.removeAfter ? "À sortir" : "Reste"}</button>`
+            : ""
+          return `<div class="line">
+            <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
+            <input class="qty" data-action="qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">
+            <input data-action="group" data-id="${line.itemId}" value="${esc(line.group || "")}" placeholder="Groupe">
+            ${mark}
+            <button data-action="remove-line" data-id="${line.itemId}">Retirer</button>
+          </div>`
+        })
+        .join("")
+      return `${head}${body}`
     })
     .join("")
+  const children = db.bags.filter((bag) => bag.modelId === model.id)
+  const served = children.length
+    ? `<h2>Sacs qui s'en servent</h2>${children.map((bag) => `<a class="row" href="#/sac/${bag.id}"><strong>${esc(bag.name)}</strong></a>`).join("")}`
+    : `<p class="empty">Aucun sac ne s'en sert encore.</p>`
   const used = new Set(model.lines.map((line) => line.itemId))
   const remaining = db.items.filter((item) => !used.has(item.id))
   const options = remaining.map((item) => `<option value="${item.id}">${esc(item.name)}</option>`).join("")
@@ -368,7 +409,7 @@ function drawModel(id) {
           <button>Ajouter</button>
         </form>`
       : `<p class="empty">Tous les objets sont dans le sac.</p>`
-  layout(model.name, `<p class="empty">Ce modèle décide du contenu. On ne coche pas ici.</p><select data-action="after-use">${choices}</select>${lines}${form}<form data-action="rename-model" data-id="${model.id}"><input name="name" value="${esc(model.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-model" data-id="${model.id}">Supprimer ce modèle</button><a class="back" href="#/modeles">Retour</a>`)
+  layout(model.name, `<p class="empty">Ce modèle décide du contenu. On ne coche pas ici.</p><select data-action="after-use">${choices}</select>${lines}${form}${served}<form data-action="rename-model" data-id="${model.id}"><input name="name" value="${esc(model.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-model" data-id="${model.id}">Supprimer ce modèle</button><a class="back" href="#/modeles">Retour</a>`)
 }
 
 function drawItems() {
@@ -384,22 +425,20 @@ function drawItems() {
     .join("")
   layout(
     "Objets",
-    `${rows || `<p class="empty">Aucun objet.</p>`}
-    <form data-action="find-item"><input name="q" value="${esc(itemQuery)}" placeholder="Chercher un objet"></form>
-    <form data-action="item"><input name="name" placeholder="Nom de l'objet" required><button>Créer l'objet</button></form>`,
+    `<form data-action="find-item"><input name="q" value="${esc(itemQuery)}" placeholder="Chercher un objet"></form>
+    <form data-action="item"><input name="name" placeholder="Nom de l'objet" required><button>Créer l'objet</button></form>
+    ${rows || `<p class="empty">Aucun objet.</p>`}`,
   )
 }
 
 function drawDepartures() {
   const trips = db.departures
+    .filter((departure) => !tripQuery || matches(departure.name, tripQuery))
     .map((departure) => {
       const when = departure.kind === "once"
         ? `Du ${formatDay(departure.start)} au ${formatDay(departure.end)}`
         : `Tous les ${weekdays[departure.weekday].toLowerCase()}s`
-      return `<div class="line">
-        <a class="row" href="#/departs/${departure.id}"><strong>${esc(departure.name)}</strong><span>${esc(when)}</span></a>
-        <button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer</button>
-      </div>`
+      return `<a class="row" href="#/departs/${departure.id}"><strong>${esc(departure.name)}</strong><span>${esc(when)}</span></a>`
     })
     .join("")
   const options = db.departureModels
@@ -435,7 +474,7 @@ function drawDepartures() {
     ? `<p class="empty">Agenda Google relié.</p><button type="button" class="quiet" data-action="disconnect">Oublier la connexion</button>`
     : `<button data-action="connect-google">Relier l'agenda Google</button>`
   const note = agendaNote ? `<p class="alert">${esc(agendaNote)}</p>` : ""
-  layout("Départs", `${trips || `<p class="empty">Aucun départ.</p>`}<h2>Dans l'agenda</h2>${note}${agenda || `<p class="empty">Rien en attente.</p>`}${link}<h2>Nouveau</h2>${create}`)
+  layout("Départs", `<form data-action="find-trip"><input name="q" value="${esc(tripQuery)}" placeholder="Chercher un départ"></form>${trips || `<p class="empty">Aucun départ.</p>`}<h2>Dans l'agenda</h2>${note}${agenda || `<p class="empty">Rien en attente.</p>`}${link}<h2>Nouveau</h2>${create}`)
 }
 
 function drawDepartureModel(id) {
@@ -455,6 +494,10 @@ function drawDepartureModel(id) {
       <button type="button" class="quiet" data-action="delete-action" data-id="${action.id}">Retirer</button>
     </form>`)
     .join("")
+  const used = db.departures.filter((departure) => departure.modelId === model.id)
+  const children = used.length
+    ? `<h2>Départs qui s'en servent</h2>${used.map((departure) => `<a class="row" href="#/departs/${departure.id}"><strong>${esc(departure.name)}</strong></a>`).join("")}`
+    : `<p class="empty">Aucun départ daté ne s'en sert encore.</p>`
   layout(
     model.name,
     `<p class="empty">Pas de date. Seulement les sacs, et ce qu'il faut faire avant le jour du départ.</p>
@@ -468,6 +511,7 @@ function drawDepartureModel(id) {
       <p class="empty">0, le jour même. 1, la veille. 30, trente jours avant.</p>
       <button>Ajouter</button>
     </form>
+    ${children}
     <form data-action="rename-dmodel" data-id="${model.id}"><input name="name" value="${esc(model.name)}" required><button>Renommer</button></form>
     <button class="quiet" data-action="delete-dmodel" data-id="${model.id}">Supprimer ce modèle</button>
     <a class="back" href="#/modeles">Retour</a>`,
@@ -508,7 +552,7 @@ function drawDeparture(id) {
         <label>Tous les<select name="weekday">${weekdays.map((label, index) => `<option value="${index}" ${index === departure.weekday ? "selected" : ""}>${label}</option>`).join("")}</select></label>
         <button>Modifier le jour</button>
       </form>`
-  layout(departure.name, `<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}${edit}<form data-action="rename-departure" data-id="${departure.id}"><input name="name" value="${esc(departure.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
+  layout(departure.name, `${model ? `<a class="row" href="#/dmodele/${model.id}"><strong>Modèle</strong><span>${esc(model.name)}</span></a>` : ""}<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}${edit}<form data-action="rename-departure" data-id="${departure.id}"><input name="name" value="${esc(departure.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
 }
 
 app.addEventListener("submit", (event) => {
@@ -518,10 +562,11 @@ app.addEventListener("submit", (event) => {
   const action = form.dataset.action
   const data = new FormData(form)
   const page = route()
-  if (action === "find-home" || action === "find-bag" || action === "find-item") {
+  if (action === "find-home" || action === "find-bag" || action === "find-item" || action === "find-trip") {
     if (action === "find-home") homeQuery = String(data.get("q") || "")
     else if (action === "find-bag") bagQuery = String(data.get("q") || "")
-    else itemQuery = String(data.get("q") || "")
+    else if (action === "find-item") itemQuery = String(data.get("q") || "")
+    else tripQuery = String(data.get("q") || "")
     draw()
     return
   }
@@ -627,6 +672,10 @@ app.addEventListener("click", (event) => {
   const page = route()
   if (action === "check") persist(toggleCheck(db, page.id, target.dataset.id).db)
   if (action === "undo") return undo()
+  if (action === "tune") {
+    tune = !tune
+    return draw()
+  }
   if (action === "exclude-line") persist(excludeBagLine(db, page.id, target.dataset.id).db)
   if (action === "include-line") persist(includeBagLine(db, page.id, target.dataset.id).db)
   if (action === "reset-bag") {
@@ -669,7 +718,7 @@ app.addEventListener("click", (event) => {
   }
   if (action === "delete-dmodel") {
     if (!confirm("Supprimer ce modèle de départ ?")) return
-    location.hash = "#/departs"
+    location.hash = "#/modeles"
     persist(deleteDepartureModel(db, target.dataset.id).db)
   }
   if (action === "delete-action") persist(removeDepartureAction(db, page.id, target.dataset.id).db)
@@ -741,6 +790,7 @@ app.addEventListener("change", (event) => {
   if (input.name === "q" && input.form?.dataset.action === "find-home") homeQuery = input.value
   if (input.name === "q" && input.form?.dataset.action === "find-bag") bagQuery = input.value
   if (input.name === "q" && input.form?.dataset.action === "find-item") itemQuery = input.value
+  if (input.name === "q" && input.form?.dataset.action === "find-trip") tripQuery = input.value
   if (input.name === "q") {
     const actionName = input.form?.dataset.action
     const caret = input.selectionStart
