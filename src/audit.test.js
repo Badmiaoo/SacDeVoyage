@@ -115,7 +115,7 @@ test("deux sorties le même jour ne consomment pas la seconde", () => {
   db = resetBag(db, bag.bag.id).db
   db = applyOutings(db, "2026-11-03")
   assert.equal(db.bags[0].status, "emptying")
-  assert.equal(db.departures.filter((entry) => entry.emptiedOn).length, 2)
+  assert.equal(db.departures.filter((entry) => entry.emptiedOn).length, 1)
 })
 
 test("supprimer le départ remet un sac encore à vider", () => {
@@ -149,6 +149,26 @@ test("un clic trop tôt sur la fois suivante annule la coche", () => {
   db = toggleDepartureAction(db, db.departures[0].id, action.id, "2026-11-12").db
   assert.equal(db.departures[0].done[action.id], undefined)
   assert.equal(agendaEvents(db, "2026-11-12")[0].title, "Badge")
+})
+
+test("remettre à zéro redemande le vidage", () => {
+  let db = emptyDb()
+  const item = createItem(db, "Masque")
+  db = item.db
+  const model = createBagModel(db, "Valise")
+  db = model.db
+  db = setAfterUse(db, model.model.id, "all").db
+  db = setModelLine(db, model.model.id, item.item.id, 1).db
+  const bag = createBag(db, "Valise", model.model.id)
+  db = bag.db
+  const trip = createDepartureModel(db, "CSE")
+  db = trip.db
+  db = toggleDepartureBag(db, trip.model.id, bag.bag.id).db
+  db = createDeparture(db, "Juin", trip.model.id, "once", "2026-08-12", "2026-08-20", "", "2026-06-01").db
+  db = applyOutings(db, "2026-08-21")
+  db = resetBag(db, bag.bag.id).db
+  db = applyOutings(db, "2026-08-21")
+  assert.equal(db.bags[0].status, "emptying")
 })
 
 test("un doublon de clé est supprimé", () => {

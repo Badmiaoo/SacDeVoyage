@@ -6,6 +6,7 @@ import {
   createBagModel,
   setAfterUse,
   setModelLine,
+  setModelGroup,
   setRemoveAfter,
   removeModelLine,
   createBag,
@@ -55,7 +56,7 @@ import {
 } from "./store.js?v=20"
 import { clearSession, clearDedicated, dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 import { formatDay, formatLine } from "./text.js"
-import { openDb, personalDb } from "./personal.js?v=21"
+import { openDb, personalDb } from "./personal.js?v=22"
 
 const app = document.querySelector("#app")
 let departureKind = "once"
@@ -73,11 +74,17 @@ const afterUseLabel = { stay: "Reste prêt", all: "Tout sortir", marked: "Sortir
 const statusLabel = { ready: "Rempli", emptying: "À vider", filling: "À remplir" }
 const weekdays = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 
-const history = []
+const UNDO = "sac-undo"
+const history = JSON.parse(sessionStorage.getItem(UNDO) || "[]")
+
+function remember() {
+  sessionStorage.setItem(UNDO, JSON.stringify(history.slice(-20)))
+}
 
 function persist(next) {
   history.push(db)
   if (history.length > 20) history.shift()
+  remember()
   db = applyOutings(next, todayIso())
   save(db)
   draw()
@@ -87,15 +94,23 @@ function persist(next) {
 function undo() {
   const previous = history.pop()
   if (!previous) return
+  remember()
   db = previous
   save(db)
   draw()
   void pushAgenda()
 }
 
+let agendaChain = Promise.resolve()
 let agendaNote = ""
 
 async function pushAgenda() {
+  const run = agendaChain.then(() => sendAgenda())
+  agendaChain = run.catch(() => {})
+  return run
+}
+
+async function sendAgenda() {
   if (!googleClientId) return
   try {
     const session = await refreshSession({
@@ -180,6 +195,14 @@ function shownStatus(bag) {
   return statusLabel[bag.status] || ""
 }
 
+let homeQuery = ""
+let bagQuery = ""
+let itemQuery = ""
+
+function matches(name, query) {
+  return name.toLocaleLowerCase("fr").includes(query.trim().toLocaleLowerCase("fr"))
+}
+
 function faultNotice(bag) {
   const names = gapNames(db, bag)
   if (!names.length) return ""
@@ -201,6 +224,7 @@ function drawBags() {
       ? ""
       : `<p class="empty">Aucun départ daté. L'agenda reste vide tant qu'il n'y en a pas un.</p>`
   const cards = [...db.bags]
+    .filter((bag) => !homeQuery || matches(bag.name, homeQuery))
     .sort((a, b) => attention(db, a) - attention(db, b))
     .map((bag) => {
       const lines = visibleLines(db, bag)
@@ -218,34 +242,51 @@ function drawBags() {
         <button>Créer le sac</button>
       </form>`
     : `<p class="empty">Crée d'abord un modèle.</p>`
-  const copy = `<h2>Copie</h2>
+  const search = `<form data-action="find-home"><input name="q" value="${esc(homeQuery)}" placeholder="Chercher un sac"></form>`
+  const copy = `<h2>Autre téléphone</h2>
+    <p class="empty">Télécharge la copie ici, envoie-la, puis reprends-la là-bas. C'est le seul pont.</p>
     <button type="button" data-action="export">Télécharger une copie</button>
     <form data-action="import"><input name="file" type="file" accept="application/json"><button>Reprendre une copie</button></form>`
-  layout("Sacs", `${next}${cards || `<p class="empty">Aucun sac.</p>`}${form}${copy}`)
+  layout("Sacs", `${next}${search}${cards || `<p class="empty">Aucun sac.</p>`}${form}${copy}`)
 }
 
 function drawBag(id) {
   const bag = db.bags.find((entry) => entry.id === id)
   if (!bag) return layout("Sac", `<p class="empty">Ce sac n'existe pas.</p>`)
-  const lines = visibleLines(db, bag)
-    .map((line) => {
-      const on = bag.checks[line.itemId] ? "on" : ""
-      const qty = bag.status === "emptying"
-        ? ""
-        : `<input class="qty" data-action="bag-qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">`
-      const fromModel = !bag.added.some((entry) => entry.itemId === line.itemId)
-      const own = fromModel
-        ? `<button type="button" class="quiet" data-action="exclude-line" data-id="${line.itemId}">Pas dans ce sac</button>`
-        : `<button type="button" data-action="remove-bag-line" data-id="${line.itemId}">Retirer</button>`
-      return `<div class="line">
-        <button class="check ${on}" data-action="check" data-id="${line.itemId}" aria-pressed="${on ? "true" : "false"}">
-          <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
-        </button>
-        ${qty}
-        ${own}
-      </div>`
+  const query = bagQuery
+  const groups = new Map()
+  for (const line of visibleLines(db, bag)) {
+    if (query && !matches(itemName(db, line.itemId), query)) continue
+    const key = line.group || ""
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(line)
+  }
+  const lines = [...groups.entries()]
+    .map(([group, rows]) => {
+      const head = group ? `<h2>${esc(group)}</h2>` : ""
+      const body = rows
+        .map((line) => {
+          const on = bag.checks[line.itemId] ? "on" : ""
+          const qty = bag.status === "emptying"
+            ? ""
+            : `<input class="qty" data-action="bag-qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">`
+          const fromModel = !bag.added.some((entry) => entry.itemId === line.itemId)
+          const own = fromModel
+            ? `<button type="button" class="quiet" data-action="exclude-line" data-id="${line.itemId}">Pas dans ce sac</button>`
+            : `<button type="button" data-action="remove-bag-line" data-id="${line.itemId}">Retirer</button>`
+          return `<div class="line">
+            <button class="check ${on}" data-action="check" data-id="${line.itemId}" aria-pressed="${on ? "true" : "false"}">
+              <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
+            </button>
+            ${qty}
+            ${own}
+          </div>`
+        })
+        .join("")
+      return `${head}${body}`
     })
     .join("")
+  const finder = `<form data-action="find-bag"><input name="q" value="${esc(query)}" placeholder="Chercher dans ce sac"></form>`
   const action = bag.status === "emptying"
     ? `<button data-action="emptied" data-id="${bag.id}">C'est vidé</button>`
     : bag.status === "filling"
@@ -265,7 +306,7 @@ function drawBag(id) {
     .map((itemId) => `<button type="button" class="quiet" data-action="include-line" data-id="${itemId}">${esc(itemName(db, itemId))} · remettre</button>`)
     .join("")
   const progress = `${visibleLines(db, bag).filter((line) => bag.checks[line.itemId]).length}/${visibleLines(db, bag).length}`
-  layout(bag.name, `<p class="empty">${esc(shownStatus(bag))} · ${progress}</p>${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${aside}${extra}${action}<button data-action="reset-bag" data-id="${bag.id}">Remettre à zéro</button><form data-action="rename-bag" data-id="${bag.id}"><input name="name" value="${esc(bag.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
+  layout(bag.name, `<p class="empty">${esc(shownStatus(bag))} · ${progress}</p>${finder}${faultNotice(bag)}${note}${lines || `<p class="empty">Rien à montrer.</p>`}${aside}${extra}${action}<button data-action="reset-bag" data-id="${bag.id}">Remettre à zéro</button><form data-action="rename-bag" data-id="${bag.id}"><input name="name" value="${esc(bag.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-bag" data-id="${bag.id}">Supprimer ce sac</button><a class="back" href="#/">Retour</a>`)
 }
 
 function daysBefore(offset) {
@@ -309,6 +350,7 @@ function drawModel(id) {
       return `<div class="line">
         <span>${esc(formatLine(itemName(db, line.itemId), line.qty))}</span>
         <input class="qty" data-action="qty" data-id="${line.itemId}" type="number" min="1" value="${line.qty}">
+        <input data-action="group" data-id="${line.itemId}" value="${esc(line.group || "")}" placeholder="Groupe">
         ${mark}
         <button data-action="remove-line" data-id="${line.itemId}">Retirer</button>
       </div>`
@@ -331,6 +373,7 @@ function drawModel(id) {
 
 function drawItems() {
   const rows = db.items
+    .filter((item) => !itemQuery || matches(item.name, itemQuery))
     .map(
       (item) => `<form class="line" data-action="rename" data-id="${item.id}">
         <input name="name" value="${esc(item.name)}">
@@ -342,6 +385,7 @@ function drawItems() {
   layout(
     "Objets",
     `${rows || `<p class="empty">Aucun objet.</p>`}
+    <form data-action="find-item"><input name="q" value="${esc(itemQuery)}" placeholder="Chercher un objet"></form>
     <form data-action="item"><input name="name" placeholder="Nom de l'objet" required><button>Créer l'objet</button></form>`,
   )
 }
@@ -474,6 +518,13 @@ app.addEventListener("submit", (event) => {
   const action = form.dataset.action
   const data = new FormData(form)
   const page = route()
+  if (action === "find-home" || action === "find-bag" || action === "find-item") {
+    if (action === "find-home") homeQuery = String(data.get("q") || "")
+    else if (action === "find-bag") bagQuery = String(data.get("q") || "")
+    else itemQuery = String(data.get("q") || "")
+    draw()
+    return
+  }
   if (action === "item") {
     const result = createItem(db, data.get("name"))
     if (result.error) return alert(result.error)
@@ -626,7 +677,7 @@ app.addEventListener("click", (event) => {
     const url = URL.createObjectURL(new Blob([exportData(db)], { type: "application/json" }))
     const link = document.createElement("a")
     link.href = url
-    link.download = "sac-de-voyage.json"
+    link.download = `sac-de-voyage-${todayIso()}.json`
     link.click()
     URL.revokeObjectURL(url)
   }
@@ -685,7 +736,21 @@ app.addEventListener("change", (event) => {
   }
   if (!(input instanceof HTMLInputElement)) return
   if (input.dataset.action === "qty") persist(setModelLine(db, page.id, input.dataset.id, input.value).db)
+  if (input.dataset.action === "group") persist(setModelGroup(db, page.id, input.dataset.id, input.value).db)
   if (input.dataset.action === "bag-qty") persist(setBagQty(db, page.id, input.dataset.id, input.value).db)
+  if (input.name === "q" && input.form?.dataset.action === "find-home") homeQuery = input.value
+  if (input.name === "q" && input.form?.dataset.action === "find-bag") bagQuery = input.value
+  if (input.name === "q" && input.form?.dataset.action === "find-item") itemQuery = input.value
+  if (input.name === "q") {
+    const actionName = input.form?.dataset.action
+    const caret = input.selectionStart
+    draw()
+    const field = document.querySelector(`form[data-action="${actionName}"] input[name="q"]`)
+    if (field) {
+      field.focus()
+      field.setSelectionRange(caret, caret)
+    }
+  }
 })
 
 window.addEventListener("hashchange", draw)

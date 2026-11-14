@@ -133,9 +133,23 @@ export function setModelLine(db, modelId, itemId, qty) {
         const existing = model.lines.find((line) => line.itemId === itemId)
         const lines = existing
           ? model.lines.map((line) => (line.itemId === itemId ? { ...line, qty: count } : line))
-          : [...model.lines, { itemId, qty: count, removeAfter: false }]
+          : [...model.lines, { itemId, qty: count, removeAfter: false, group: "" }]
         return { ...model, lines }
       }),
+    },
+  }
+}
+
+export function setModelGroup(db, modelId, itemId, group) {
+  const label = String(group || "").trim()
+  return {
+    db: {
+      ...db,
+      bagModels: db.bagModels.map((model) =>
+        model.id === modelId
+          ? { ...model, lines: model.lines.map((line) => (line.itemId === itemId ? { ...line, group: label } : line)) }
+          : model,
+      ),
     },
   }
 }
@@ -309,10 +323,16 @@ export function includeBagLine(db, bagId, itemId) {
 }
 
 export function resetBag(db, bagId) {
+  const bag = db.bags.find((entry) => entry.id === bagId)
   return {
     db: {
       ...db,
-      bags: db.bags.map((bag) => (bag.id === bagId ? { ...bag, status: "ready", checks: {} } : bag)),
+      bags: db.bags.map((entry) => (entry.id === bagId ? { ...entry, status: "ready", checks: {} } : entry)),
+      departures: db.departures.map((departure) => {
+        const model = db.departureModels.find((entry) => entry.id === departure.modelId)
+        if (!bag || !model?.bagIds.includes(bagId) || !departure.emptiedOn) return departure
+        return { ...departure, emptiedOn: null }
+      }),
     },
   }
 }
@@ -386,6 +406,7 @@ export function resolveLines(db, bag) {
       itemId: line.itemId,
       qty: bag.qty[line.itemId] ?? line.qty,
       removeAfter: line.removeAfter,
+      group: line.group || "",
     })
   }
   for (const extra of bag.added) {
@@ -395,6 +416,7 @@ export function resolveLines(db, bag) {
       itemId: extra.itemId,
       qty: bag.qty[extra.itemId] ?? extra.qty,
       removeAfter: extra.removeAfter,
+      group: extra.group || "",
     })
   }
   return lines

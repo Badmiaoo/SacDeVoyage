@@ -57,6 +57,7 @@ export function googleApi({ fetch, token }) {
     while (next && !seen.has(next)) {
       seen.add(next)
       const response = await fetch(next, { headers })
+      if (response.ok === false) throw new Error("Google n'a pas répondu.")
       const json = await response.json()
       items.push(...(json.items || []))
       if (!json.nextPageToken) break
@@ -71,6 +72,7 @@ export function googleApi({ fetch, token }) {
     listCalendars: () => getAll(`${API}/users/me/calendarList`),
     async createCalendar(name) {
       const response = await fetch(`${API}/calendars`, { method: "POST", headers, body: JSON.stringify({ summary: name }) })
+      if (!response.ok) throw new Error("Google n'a pas créé le calendrier.")
       const calendar = await response.json()
       if (calendar.id) await this.selectCalendar(calendar.id)
       return calendar
@@ -85,14 +87,17 @@ export function googleApi({ fetch, token }) {
     listEvents: (id) => getAll(`${events(id)}?privateExtendedProperty=app%3Dsac-de-voyage`),
     async insertEvent(id, body) {
       const response = await fetch(events(id), { method: "POST", headers, body: JSON.stringify(body) })
+      if (response.ok === false) throw new Error("Google n'a pas ajouté l'événement.")
       return response.json()
     },
     async patchEvent(id, eventId, body) {
       const response = await fetch(`${events(id)}/${encodeURIComponent(eventId)}`, { method: "PATCH", headers, body: JSON.stringify(body) })
+      if (response.ok === false) throw new Error("Google n'a pas modifié l'événement.")
       return response.json()
     },
     async deleteEvent(id, eventId) {
-      await fetch(`${events(id)}/${encodeURIComponent(eventId)}`, { method: "DELETE", headers })
+      const response = await fetch(`${events(id)}/${encodeURIComponent(eventId)}`, { method: "DELETE", headers })
+      if (!response.ok && response.status !== 404 && response.ok !== undefined) throw new Error("Google n'a pas retiré l'événement.")
     },
   }
 }

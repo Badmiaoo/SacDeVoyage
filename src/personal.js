@@ -7,6 +7,7 @@ import {
   setAfterUse,
   setModelLine,
   setRemoveAfter,
+  setModelGroup,
   createBag,
   excludeBagLine,
   setBagQty,
@@ -16,7 +17,7 @@ import {
   createDeparture,
 } from "./store.js"
 
-export const PERSONAL_SEED = "maquette-1"
+export const PERSONAL_SEED = "maquette-2"
 const KEEP = new Set([PERSONAL_SEED, "imported"])
 
 const maison = [
@@ -59,42 +60,47 @@ const plongee = [
   ["Masque", false],
   ["Tuba", false],
   ["Palmes", false],
+  ["Ceinture de plombs", false],
+  ["Ordinateur de plongée", false],
+  ["Lampe de plongée", false],
+  ["Sifflet", false],
   ["Stab", true],
   ["Combinaison", true],
+  ["Chaussons", true],
   ["Serviette", true],
 ]
 
 const voyage = [
-  "Pisse debout",
-  "Sac voyage Quechua",
-  "Gourde",
-  "Lampe torche, frontale",
-  "Sac plastique",
-  "Ficelle",
-  "Airtag (chipolo)",
-  "Boule quies, bouchons d'oreilles",
-  "Lessive à main",
-  "Coussin avion à rembourrer",
-  "Crème solaire brume",
-  "Vêtements anti UV",
-  "Pic carte sim",
-  "Câble Anker",
-  "Adaptateur jack-bluetooth (ou jack 3.5 2.5)",
-  "Power bank steamdeck",
-  "Bas de contention",
-  "Sac de plage",
-  "Mini ventilateur",
-  "Anti-friction",
-  "Fix-it",
-  "Crème solaire tatouage",
-  "Dés + cartes",
-  "Lingettes antiseptiques",
-  "Kit vis/bricolage",
-  "Bonde évier",
-  "Serviette micro fibre",
-  "cadenas TSA",
-  "Brosse à dents",
-  "Chaussettes",
+  ["Pisse debout", "Sac"],
+  ["Sac voyage Quechua", "Sac"],
+  ["Gourde", "Sac"],
+  ["Sac plastique", "Sac"],
+  ["Ficelle", "Sac"],
+  ["Sac de plage", "Sac"],
+  ["Serviette micro fibre", "Sac"],
+  ["Airtag (chipolo)", "Tech"],
+  ["Lampe torche, frontale", "Tech"],
+  ["Pic carte sim", "Tech"],
+  ["Câble Anker", "Tech"],
+  ["Adaptateur jack-bluetooth (ou jack 3.5 2.5)", "Tech"],
+  ["Power bank steamdeck", "Tech"],
+  ["Mini ventilateur", "Tech"],
+  ["Boule quies, bouchons d'oreilles", "Confort"],
+  ["Lessive à main", "Confort"],
+  ["Coussin avion à rembourrer", "Confort"],
+  ["Crème solaire brume", "Confort"],
+  ["Vêtements anti UV", "Confort"],
+  ["Bas de contention", "Confort"],
+  ["Anti-friction", "Confort"],
+  ["Crème solaire tatouage", "Confort"],
+  ["Fix-it", "Divers"],
+  ["Dés + cartes", "Divers"],
+  ["Lingettes antiseptiques", "Divers"],
+  ["Kit vis/bricolage", "Divers"],
+  ["Bonde évier", "Divers"],
+  ["cadenas TSA", "Divers"],
+  ["Brosse à dents", "Divers"],
+  ["Chaussettes", "Divers"],
 ]
 
 const chat = [
@@ -125,15 +131,19 @@ function itemId(db, name) {
 
 function makeBag(db, name, afterUse, labels) {
   let next = db
+  const rows = labels.map((label) => (Array.isArray(label) ? label : [label, ""]))
   const ids = []
-  for (const label of labels) {
+  for (const [label] of rows) {
     const added = itemId(next, label)
     next = added.db
     ids.push(added.id)
   }
   const model = createBagModel(next, name)
   next = setAfterUse(model.db, model.model.id, afterUse).db
-  for (const id of ids) next = setModelLine(next, model.model.id, id, 1).db
+  rows.forEach(([, group], index) => {
+    next = setModelLine(next, model.model.id, ids[index], 1).db
+    if (group) next = setModelGroup(next, model.model.id, ids[index], group).db
+  })
   const bag = createBag(next, name, model.model.id)
   return { db: bag.db, bagId: bag.bag.id, modelId: model.model.id }
 }
