@@ -1,7 +1,7 @@
 import { addDays } from "./store.js?v=20"
 
 export function planCalendar(desired, existing, today) {
-  const end = addDays(today, 1)
+  const end = addDays(today, 60)
   const ours = existing.filter((event) => event.key)
   const byKey = new Map()
   const extras = []

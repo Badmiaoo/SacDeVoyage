@@ -56,7 +56,7 @@ import {
 } from "./store.js?v=20"
 import { clearSession, clearDedicated, dropAuthQuery, googleApi, googleClientId, loadSession, openGoogleConsent, refreshSession, saveSession, sessionUsable, syncDedicated } from "./google.js"
 import { formatDay, formatLine } from "./text.js"
-import { openDb, personalDb } from "./personal.js?v=23"
+import { openDb, personalDb } from "./personal.js?v=24"
 
 const app = document.querySelector("#app")
 let departureKind = "once"
@@ -103,6 +103,7 @@ function undo() {
 
 let agendaChain = Promise.resolve()
 let agendaNote = ""
+let tripNote = ""
 
 async function pushAgenda() {
   const run = agendaChain.then(() => sendAgenda())
@@ -159,7 +160,7 @@ function esc(value) {
 }
 
 function layout(title, body) {
-  const undo = history.length ? `<button type="button" class="quiet" data-action="undo">Annuler</button>` : ""
+  const undo = `<button type="button" class="quiet" data-action="undo" style="visibility:${history.length ? "visible" : "hidden"}">Annuler</button>`
   app.innerHTML = `
     <header><p class="brand">Sac de voyage</p><h1>${esc(title)}</h1>${undo}</header>
     <main>${body}</main>
@@ -217,15 +218,6 @@ function faultNotice(bag) {
 }
 
 function drawBags() {
-  const today = todayIso()
-  const listed = listedActions(db, today)
-  const due = listed.filter((row) => row.due)
-  const later = listed.filter((row) => !row.due).slice(0, 3)
-  const next = due.length || later.length
-    ? `<h2>À faire</h2>${due.map((row) => `<a class="row" href="#/departs/${row.departureId}"><strong>${esc(row.label)}</strong><span>${esc(row.departureName)}</span></a>`).join("")}${later.map((row) => `<a class="row" href="#/departs/${row.departureId}"><strong>${esc(row.label)}</strong><span>${esc(formatDay(row.since))}</span></a>`).join("")}`
-    : db.departures.length
-      ? ""
-      : `<p class="empty">Aucun départ daté. L'agenda reste vide tant qu'il n'y en a pas un.</p>`
   const cards = [...db.bags]
     .filter((bag) => !homeQuery || matches(bag.name, homeQuery))
     .sort((a, b) => attention(db, a) - attention(db, b))
@@ -253,7 +245,7 @@ function drawBags() {
       <button type="button" data-action="export">Télécharger une copie</button>
       <form data-action="import"><input name="file" type="file" accept="application/json"><button>Reprendre une copie</button></form>`
     : ""
-  layout("Sacs", `${next}${search}${cards || `<p class="empty">Aucun sac.</p>`}${workshop}<button type="button" class="quiet" data-action="tune">${tune ? "Fermer les réglages" : "Réglages"}</button>`)
+  layout("Sacs", `${search}${cards || `<p class="empty">Aucun sac.</p>`}${workshop}<button type="button" class="quiet" data-action="tune">${tune ? "Fermer les réglages" : "Réglages"}</button>`)
 }
 
 function drawBag(id) {
@@ -474,7 +466,16 @@ function drawDepartures() {
     ? `<p class="empty">Agenda Google relié.</p><button type="button" class="quiet" data-action="disconnect">Oublier la connexion</button>`
     : `<button data-action="connect-google">Relier l'agenda Google</button>`
   const note = agendaNote ? `<p class="alert">${esc(agendaNote)}</p>` : ""
-  layout("Départs", `<form data-action="find-trip"><input name="q" value="${esc(tripQuery)}" placeholder="Chercher un départ"></form>${trips || `<p class="empty">Aucun départ.</p>`}<h2>Dans l'agenda</h2>${note}${agenda || `<p class="empty">Rien en attente.</p>`}${link}<h2>Nouveau</h2>${create}`)
+  const today = todayIso()
+  const listed = listedActions(db, today)
+  const due = listed.filter((row) => row.due)
+  const later = listed.filter((row) => !row.due)
+  const todo = `<h2>À faire</h2>${
+    due.length || later.length
+      ? `${due.map((row) => `<a class="row" href="#/departs/${row.departureId}"><strong>${esc(row.label)}</strong><span>${esc(row.departureName)}</span></a>`).join("")}${later.map((row) => `<a class="row" href="#/departs/${row.departureId}"><strong>${esc(row.label)}</strong><span>${esc(formatDay(row.since))}</span></a>`).join("")}`
+      : `<p class="empty">Rien en attente.</p>`
+  }`
+  layout("Départs", `<form data-action="find-trip"><input name="q" value="${esc(tripQuery)}" placeholder="Chercher un départ"></form>${todo}${trips || `<p class="empty">Aucun départ.</p>`}<h2>Dans l'agenda</h2>${note}${agenda || `<p class="empty">Rien en attente.</p>`}${link}<h2>Nouveau</h2>${create}`)
 }
 
 function drawDepartureModel(id) {
@@ -552,7 +553,7 @@ function drawDeparture(id) {
         <label>Tous les<select name="weekday">${weekdays.map((label, index) => `<option value="${index}" ${index === departure.weekday ? "selected" : ""}>${label}</option>`).join("")}</select></label>
         <button>Modifier le jour</button>
       </form>`
-  layout(departure.name, `${model ? `<a class="row" href="#/dmodele/${model.id}"><strong>Modèle</strong><span>${esc(model.name)}</span></a>` : ""}<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}${edit}<form data-action="rename-departure" data-id="${departure.id}"><input name="name" value="${esc(departure.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
+  layout(departure.name, `${model ? `<a class="row" href="#/dmodele/${model.id}"><strong>Modèle</strong><span>${esc(model.name)}</span></a>` : ""}${tripNote ? `<p class="alert">${esc(tripNote)}</p>` : ""}<p class="empty">${esc(when)}</p><h2>À cocher</h2>${actions || `<p class="empty">Aucune action.</p>`}<h2>Sacs</h2>${bags || `<p class="empty">Aucun sac dans le modèle.</p>`}${edit}<form data-action="rename-departure" data-id="${departure.id}"><input name="name" value="${esc(departure.name)}" required><button>Renommer</button></form><button class="quiet" data-action="delete-departure" data-id="${departure.id}">Supprimer ce départ</button><a class="back" href="#/departs">Retour</a>`)
 }
 
 app.addEventListener("submit", (event) => {
@@ -700,7 +701,12 @@ app.addEventListener("click", (event) => {
   if (action === "emptied") persist(markEmptied(db, target.dataset.id).db)
   if (action === "filled") persist(markFilled(db, target.dataset.id).db)
   if (action === "trip-bag") persist(toggleDepartureBag(db, page.id, target.dataset.id).db)
-  if (action === "trip-check") persist(toggleDepartureAction(db, page.id, target.dataset.id, todayIso()).db)
+  if (action === "trip-check") {
+    const result = toggleDepartureAction(db, page.id, target.dataset.id, todayIso())
+    tripNote = result.early ? "Pas encore. La date n'est pas arrivée." : ""
+    persist(result.db)
+    return
+  }
   if (action === "delete-bag") {
     if (!confirm("Supprimer ce sac ?")) return
     location.hash = "#/"

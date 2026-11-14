@@ -121,7 +121,7 @@ test("le lendemain allonge, cocher retire, le sac à vider n'a pas son contenu",
   await syncDedicated(db, "2026-11-13", api)
   assert.equal(api.state.events.sac.length, 1)
   assert.deepEqual(api.state.events.sac[0].start, { date: "2026-11-10" })
-  assert.deepEqual(api.state.events.sac[0].end, { date: "2026-11-14" })
+  assert.deepEqual(api.state.events.sac[0].end, { date: "2027-01-12" })
   const action = db.departureModels[0].actions[0]
   db = toggleDepartureAction(db, db.departures[0].id, action.id, "2026-11-12").db
   db = applyOutings(db, "2026-11-12")

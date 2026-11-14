@@ -323,16 +323,12 @@ export function includeBagLine(db, bagId, itemId) {
 }
 
 export function resetBag(db, bagId) {
-  const bag = db.bags.find((entry) => entry.id === bagId)
   return {
     db: {
       ...db,
-      bags: db.bags.map((entry) => (entry.id === bagId ? { ...entry, status: "ready", checks: {} } : entry)),
-      departures: db.departures.map((departure) => {
-        const model = db.departureModels.find((entry) => entry.id === departure.modelId)
-        if (!bag || !model?.bagIds.includes(bagId) || !departure.emptiedOn) return departure
-        return { ...departure, emptiedOn: null }
-      }),
+      bags: db.bags.map((entry) =>
+        entry.id === bagId ? { ...entry, status: "ready", checks: {}, emptiedOn: null } : entry,
+      ),
     },
   }
 }
@@ -432,7 +428,10 @@ export function visibleLines(db, bag) {
 
 export function gapNames(db, bag) {
   if (bag.status === "emptying") return []
-  return resolveLines(db, bag).filter((line) => !bag.checks[line.itemId]).map((line) => itemName(db, line.itemId))
+  const lines = resolveLines(db, bag)
+  const model = db.bagModels.find((entry) => entry.id === bag.modelId)
+  const relevant = bag.status === "filling" && model?.afterUse === "marked" ? lines.filter((line) => line.removeAfter) : lines
+  return relevant.filter((line) => !bag.checks[line.itemId]).map((line) => itemName(db, line.itemId))
 }
 
 export function missingChecks(db, bag) {
@@ -441,9 +440,9 @@ export function missingChecks(db, bag) {
 }
 
 export function attention(db, bag) {
-  if (missingChecks(db, bag).length) return 0
-  if (bag.status === "emptying") return 1
-  if (bag.status === "filling") return 2
+  if (bag.status === "emptying") return 0
+  if (bag.status === "filling") return 1
+  if (missingChecks(db, bag).length) return 2
   return 3
 }
 
@@ -614,36 +613,31 @@ export function currentOccurrence(departure, action, today) {
 }
 
 export function actionChecked(departure, action) {
-  return departure.kind === "once" && departure.done[action.id] === departure.start
+  if (departure.kind === "once") return departure.done[action.id] === departure.start
+  return false
 }
 
 export function toggleDepartureAction(db, departureId, actionId, today) {
-  return {
-    db: {
-      ...db,
-      departures: db.departures.map((departure) => {
-        if (departure.id !== departureId) return departure
-        const model = db.departureModels.find((entry) => entry.id === departure.modelId)
-        const action = model?.actions.find((entry) => entry.id === actionId)
-        if (!action) return departure
-        const done = { ...departure.done }
-        const day = currentOccurrence(departure, action, today)
-        if (!day) {
-          delete done[actionId]
-          return { ...departure, done }
-        }
-        if (addDays(day, action.offsetDays) > today) {
-          if (departure.kind === "recurring" && done[actionId]) {
-            delete done[actionId]
-            return { ...departure, done }
-          }
-          return departure
-        }
-        done[actionId] = day
-        return { ...departure, done }
-      }),
-    },
-  }
+  let early = false
+  const departures = db.departures.map((departure) => {
+    if (departure.id !== departureId) return departure
+    const model = db.departureModels.find((entry) => entry.id === departure.modelId)
+    const action = model?.actions.find((entry) => entry.id === actionId)
+    if (!action) return departure
+    const done = { ...departure.done }
+    const day = currentOccurrence(departure, action, today)
+    if (!day) {
+      delete done[actionId]
+      return { ...departure, done }
+    }
+    if (addDays(day, action.offsetDays) > today) {
+      early = true
+      return departure
+    }
+    done[actionId] = day
+    return { ...departure, done }
+  })
+  return early ? { db, early: true } : { db: { ...db, departures } }
 }
 
 
@@ -759,13 +753,12 @@ export function deleteDeparture(db, departureId, today = null) {
 }
 
 export function deleteDepartureModel(db, modelId) {
-  return {
-    db: {
-      ...db,
-      departureModels: db.departureModels.filter((model) => model.id !== modelId),
-      departures: db.departures.filter((entry) => entry.modelId !== modelId),
-    },
+  const next = {
+    ...db,
+    departureModels: db.departureModels.filter((model) => model.id !== modelId),
+    departures: db.departures.filter((entry) => entry.modelId !== modelId),
   }
+  return releaseUnusedEmptying(next, todayIso())
 }
 
 export function removeDepartureAction(db, modelId, actionId) {
@@ -792,22 +785,21 @@ export function applyOutings(db, today) {
   const departures = db.departures.map((raw) => {
     const departure = raw.createdOn ? raw : { ...raw, createdOn: today }
     const when = outingDate(departure, today)
-    if (!when || today <= when || departure.emptiedOn === when) return departure
+    if (!when || today <= when) return departure
     const model = db.departureModels.find((entry) => entry.id === departure.modelId)
     if (!model) return departure
     const ids = new Set(model.bagIds)
-    const blocked = bags.some((bag) => {
-      if (!ids.has(bag.id)) return false
-      const recipe = db.bagModels.find((entry) => entry.id === bag.modelId)
-      return recipe && recipe.afterUse !== "stay" && bag.status !== "ready"
-    })
-    if (blocked) return departure
+    let did = false
     bags = bags.map((bag) => {
       if (!ids.has(bag.id)) return bag
+      if (bag.emptiedOn === when) return bag
+      if (bag.emptiedOn === undefined && departure.emptiedOn === when) return { ...bag, emptiedOn: when }
       const recipe = db.bagModels.find((entry) => entry.id === bag.modelId)
       if (!recipe || recipe.afterUse === "stay" || bag.status !== "ready") return bag
-      return { ...bag, status: "emptying", checks: {} }
+      did = true
+      return { ...bag, status: "emptying", checks: {}, emptiedOn: when }
     })
+    if (!did && bags.some((bag) => ids.has(bag.id) && bag.emptiedOn !== when && bag.status !== "ready")) return departure
     return { ...departure, emptiedOn: when }
   })
   return { ...db, bags, departures }

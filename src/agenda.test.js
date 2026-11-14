@@ -28,7 +28,7 @@ test("un événement nouveau part du jour prévu et couvre aujourd'hui", () => {
     summary: "Badge",
     description: "",
     start: "2026-11-10",
-    end: "2026-11-13",
+    end: "2027-01-11",
   })
 })
 
@@ -41,7 +41,7 @@ test("le lendemain allonge le même événement", () => {
   assert.equal(plan.updates.length, 1)
   assert.equal(plan.updates[0].id, "g1")
   assert.equal(plan.updates[0].start, "2026-11-10")
-  assert.equal(plan.updates[0].end, "2026-11-14")
+  assert.equal(plan.updates[0].end, "2027-01-12")
 })
 
 test("cocher supprime, et un autre agenda n'est pas touché", () => {
@@ -60,7 +60,7 @@ test("le rappel du sac garde son premier jour", () => {
   const plan = planCalendar(desired, existing, "2026-11-13")
   assert.equal(plan.creates.length, 0)
   assert.equal(plan.updates[0].start, "2026-11-12")
-  assert.equal(plan.updates[0].end, "2026-11-14")
+  assert.equal(plan.updates[0].end, "2027-01-12")
   assert.equal(plan.updates[0].summary.includes("Masque"), false)
 })
 

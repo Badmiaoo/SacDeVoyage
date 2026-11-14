@@ -214,6 +214,7 @@ export function openDb(storage) {
   try {
     const current = load(storage)
     if (KEEP.has(current?.seed)) return current
+    if (current?.seed && Array.isArray(current.bags) && current.bags.length) return current
   } catch {
     // Un fichier illisible est remplacé.
   }

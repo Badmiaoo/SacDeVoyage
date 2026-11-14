@@ -111,11 +111,11 @@ test("deux sorties le même jour ne consomment pas la seconde", () => {
   db = createDeparture(db, "Deux", second.model.id, "once", "2026-11-01", "2026-11-02", "", "2026-11-01").db
   db = applyOutings(db, "2026-11-03")
   assert.equal(db.bags[0].status, "emptying")
-  assert.equal(db.departures.filter((entry) => entry.emptiedOn).length, 1)
+  assert.equal(db.departures.filter((entry) => entry.emptiedOn).length, 2)
   db = resetBag(db, bag.bag.id).db
   db = applyOutings(db, "2026-11-03")
   assert.equal(db.bags[0].status, "emptying")
-  assert.equal(db.departures.filter((entry) => entry.emptiedOn).length, 1)
+  assert.equal(db.bags[0].emptiedOn, "2026-11-02")
 })
 
 test("supprimer le départ remet un sac encore à vider", () => {
@@ -137,7 +137,7 @@ test("supprimer le départ remet un sac encore à vider", () => {
   assert.equal(db.bags[0].status, "ready")
 })
 
-test("un clic trop tôt sur la fois suivante annule la coche", () => {
+test("un clic trop tôt ne défait pas la coche", () => {
   let db = emptyDb()
   const trip = createDepartureModel(db, "Paris")
   db = trip.db
@@ -146,9 +146,34 @@ test("un clic trop tôt sur la fois suivante annule la coche", () => {
   const action = db.departureModels[0].actions[0]
   db = toggleDepartureAction(db, db.departures[0].id, action.id, "2026-11-11").db
   assert.equal(db.departures[0].done[action.id], "2026-11-11")
-  db = toggleDepartureAction(db, db.departures[0].id, action.id, "2026-11-12").db
-  assert.equal(db.departures[0].done[action.id], undefined)
-  assert.equal(agendaEvents(db, "2026-11-12")[0].title, "Badge")
+  const early = toggleDepartureAction(db, db.departures[0].id, action.id, "2026-11-12")
+  assert.equal(early.early, true)
+  assert.equal(early.db.departures[0].done[action.id], "2026-11-11")
+})
+
+test("remettre à zéro un sac ne revide pas l'autre", () => {
+  let db = emptyDb()
+  const item = createItem(db, "Masque")
+  db = item.db
+  const model = createBagModel(db, "Valise")
+  db = model.db
+  db = setAfterUse(db, model.model.id, "all").db
+  db = setModelLine(db, model.model.id, item.item.id, 1).db
+  const first = createBag(db, "A", model.model.id)
+  db = first.db
+  const second = createBag(db, "B", model.model.id)
+  db = second.db
+  const trip = createDepartureModel(db, "CSE")
+  db = trip.db
+  db = toggleDepartureBag(db, trip.model.id, first.bag.id).db
+  db = toggleDepartureBag(db, trip.model.id, second.bag.id).db
+  db = createDeparture(db, "Juin", trip.model.id, "once", "2026-08-12", "2026-08-20", "", "2026-06-01").db
+  db = applyOutings(db, "2026-08-21")
+  db = resetBag(db, first.bag.id).db
+  db = applyOutings(db, "2026-08-21")
+  assert.equal(db.bags.find((bag) => bag.id === first.bag.id).status, "emptying")
+  assert.equal(db.bags.find((bag) => bag.id === second.bag.id).status, "emptying")
+  assert.equal(db.bags.find((bag) => bag.id === second.bag.id).emptiedOn, "2026-08-20")
 })
 
 test("remettre à zéro redemande le vidage", () => {
